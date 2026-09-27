@@ -1,0 +1,23 @@
+{
+	"name": "Node.js & TypeScript",
+	"image": "node:26-trixie",
+	"features": {
+		"ghcr.io/devcontainers/features/common-utils:2": {
+			"installZsh": "true",
+			"upgradePackages": "true",
+			"username": "node"
+		},
+		"ghcr.io/devcontainers/features/go:1": {}
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"Vue.volar",
+				"bradlc.vscode-tailwindcss",
+				"esbenp.prettier-vscode"
+			]
+		}
+	},
+	"postCreateCommand": "sudo npm i -g pnpm",
+	"remoteUser": "node"
+}
