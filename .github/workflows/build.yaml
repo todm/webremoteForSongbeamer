@@ -22,6 +22,7 @@ jobs:
 
             - name: Build frontend
               run: |
+                  npm version ${{ github.ref_name }} -f --no-git-tag-version
                   npm install
                   npm run build
             - name: Upload artifact
