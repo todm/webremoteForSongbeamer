@@ -3,8 +3,10 @@ import { useConfigStore } from '../stores/config';
 import { PlusIcon, MinusIcon } from '@lucide/vue';
 import { clamp } from '../utils';
 import { useSongbeamerStore } from '../stores/songbeamer';
-import { watch } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import { SUPPORTED_ENCODINGS } from '../utils/constants';
+import { CircleArrowUpIcon } from '@lucide/vue';
+import packageJson from '../../package.json';
 
 const config = useConfigStore();
 const sb = useSongbeamerStore();
@@ -24,9 +26,37 @@ function reset() {
     config.reset();
     location.reload();
 }
+
+// Check for updates
+const newVersion = ref<string>();
+onMounted(async () => {
+    const { tag_name } = await fetch('https://api.github.com/repos/todm/webremoteforsongbeamer/releases/latest').then((res) => res.json());
+
+    const localVersion = packageJson.version.match(/(\d+)\.(\d+)\.(\d+)/);
+    const remoteVersion = tag_name.match(/(\d+)\.(\d+)\.(\d+)/);
+
+    if (!localVersion || !remoteVersion) {
+        return;
+    }
+
+    for (let i = 1; i < Math.max(localVersion.length, remoteVersion.length); i++) {
+        if (parseInt(remoteVersion[i]) > parseInt(localVersion[i])) {
+            newVersion.value = tag_name;
+            break;
+        } else if (parseInt(remoteVersion[i]) < parseInt(localVersion[i])) {
+            break;
+        }
+    }
+});
 </script>
 
 <template>
+    <div class="alert lg:my-4 lg:w-4xl mx-auto" v-if="!!newVersion">
+        <CircleArrowUpIcon class="h-4 w-4" />
+        A new version is available {{ newVersion }}
+        <a href="https://github.com/todm/webremoteForSongbeamer/releases/latest" target="_blank"
+            class="link">Download</a>
+    </div>
     <div class="border-base-300 bg-base-200 mx-auto rounded-md border px-4 py-4 shadow-md lg:my-4 lg:w-4xl">
         <h1 class="font-heading">Settings</h1>
 
@@ -60,7 +90,8 @@ function reset() {
 
             <label class="label">Keep screen awake</label>
             <div>
-                <input type="checkbox" :disabled="!hasWakeLockSupport" v-model="config.general.wakeLock" class="toggle" />
+                <input type="checkbox" :disabled="!hasWakeLockSupport" v-model="config.general.wakeLock"
+                    class="toggle" />
                 <div class="badge badge-error badge-xs ml-2" v-if="!hasWakeLockSupport">Not supported by browser</div>
             </div>
 
@@ -97,14 +128,15 @@ function reset() {
             </div>
 
             <label class="label" v-if="config.presentation.localSngRendering">SNG Encoding</label>
-            <select class="select select-sm w-32" v-model="config.presentation.sngEncoding" v-if="config.presentation.localSngRendering">
+            <select class="select select-sm w-32" v-model="config.presentation.sngEncoding"
+                v-if="config.presentation.localSngRendering">
                 <option v-for="enc in SUPPORTED_ENCODINGS">{{ enc }}</option>
             </select>
 
             <label class="label"> Use Grid Splitting </label>
             <div class="flex items-center gap-3 flex-wrap">
                 <input type="checkbox" v-model="config.presentation.gridCaptureEnabled" class="toggle" />
-                <div class="join" :class="{'*:btn-disabled': !config.presentation.gridCaptureEnabled}">
+                <div class="join" :class="{ '*:btn-disabled': !config.presentation.gridCaptureEnabled }">
                     <button class="btn join-item btn-square btn-sm" @click="addGridCols(-1)">
                         <MinusIcon class="h-3 w-3" />
                     </button>
@@ -115,7 +147,8 @@ function reset() {
                 </div>
             </div>
             <p class="text-xs text-base-content/30 col-span-2 wrap-normal">
-                If you enable grid splitting, make sure to set the number of columns to match the number of columns in songbeamer. Otherwise, the grid will be split incorrectly and the output will look wrong.
+                If you enable grid splitting, make sure to set the number of columns to match the number of columns in
+                songbeamer. Otherwise, the grid will be split incorrectly and the output will look wrong.
             </p>
         </fieldset>
 
