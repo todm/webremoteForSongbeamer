@@ -3,6 +3,7 @@
 package interop
 
 import (
+	"sync"
 	"syscall"
 	"unsafe"
 )
@@ -85,15 +86,27 @@ var (
 	pGetWindowThreadProcessId = user32.NewProc("GetWindowThreadProcessId")
 	pGetClassNameW            = user32.NewProc("GetClassNameW")
 	pEnumPropsExW             = user32.NewProc("EnumPropsExW")
+
+	pEnumWindowsProc = syscall.NewCallback(func(hWnd uintptr, lParam uintptr) uintptr {
+		return boolToPtr(lookupCallback[func(hWnd uintptr) bool](lParam)(hWnd))
+	})
+	pEnumChildProc  = pEnumWindowsProc
+	pPropEnumProcEx = syscall.NewCallback(func(p1, p2, p3, lParam uintptr) uintptr {
+		return boolToPtr(lookupCallback[func(p1, p2, p3 uintptr) bool](lParam)(p1, p2, p3))
+	})
 )
 
-func EnumWindows(cb uintptr, params unsafe.Pointer) bool {
-	r, _, _ := pEnumWindows.Call(cb, 0)
+func EnumWindows(cb func(hWnd uintptr) bool) bool {
+	cbId := enqueueCallback(cb)
+	defer unqueueCallback(cbId)
+	r, _, _ := pEnumWindows.Call(pEnumWindowsProc, cbId)
 	return r != 0
 }
 
-func EnumChildWindows(hWnd uintptr, cb uintptr, params unsafe.Pointer) bool {
-	r, _, _ := pEnumChildWindows.Call(hWnd, cb, 0)
+func EnumChildWindows(hWnd uintptr, cb func(hWnd uintptr) bool) bool {
+	cbId := enqueueCallback(cb)
+	defer unqueueCallback(cbId)
+	r, _, _ := pEnumChildWindows.Call(hWnd, pEnumChildProc, cbId)
 	return r != 0
 }
 
@@ -108,7 +121,48 @@ func GetClassName(hWnd uintptr, buffer []uint16) int32 {
 	return int32(r)
 }
 
-func EnumPropsExW(hWnd uintptr, lpEnumFunc uintptr, lParam uintptr) uintptr {
-	r, _, _ := pEnumPropsExW.Call(hWnd, lpEnumFunc, lParam)
+func EnumPropsExW(hWnd uintptr, cb func(p1, p2, p3 uintptr) bool) uintptr {
+	cbId := enqueueCallback(cb)
+	defer unqueueCallback(cbId)
+	r, _, _ := pEnumPropsExW.Call(hWnd, pPropEnumProcEx, cbId)
 	return r
+}
+
+// ******************************** //
+// *           callbacks          * //
+// ******************************** //
+
+var (
+	cbMu   sync.Mutex
+	cbNext uintptr
+	cbFns  = map[uintptr]any{}
+)
+
+func enqueueCallback[T any](cb T) uintptr {
+	cbMu.Lock()
+	defer cbMu.Unlock()
+
+	cbNext++
+	id := cbNext
+	cbFns[id] = cb
+	return id
+}
+
+func lookupCallback[T any](id uintptr) T {
+	cbMu.Lock()
+	defer cbMu.Unlock()
+	return cbFns[id].(T)
+}
+
+func unqueueCallback(id uintptr) {
+	cbMu.Lock()
+	defer cbMu.Unlock()
+	delete(cbFns, id)
+}
+
+func boolToPtr(b bool) uintptr {
+	if b {
+		return 1
+	}
+	return 0
 }

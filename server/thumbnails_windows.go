@@ -142,24 +142,33 @@ func (p *TProcess) Close() {
 
 func (p *TProcess) GetWindowHandle(className string) uintptr {
 	var handle uintptr
-	var callback uintptr
-	buffer := make([]uint16, 256)
 
-	callback = syscall.NewCallback(func(hWnd uintptr, _ uintptr) uintptr {
-		windowProc := interop.GetWindowThreadProcessId(hWnd)
-		if uintptr(windowProc) != p.id {
-			return 1
-		}
+	buffer := make([]uint16, 256)
+	checkClassName := func(hWnd uintptr) bool {
 		copied := interop.GetClassName(hWnd, buffer)
-		if strings.EqualFold(syscall.UTF16ToString(buffer[:copied]), className) {
-			handle = hWnd
-			return 0
+		return strings.EqualFold(syscall.UTF16ToString(buffer[:copied]), className)
+	}
+
+	interop.EnumWindows(func(hWnd uintptr) bool {
+		if interop.GetWindowThreadProcessId(hWnd) != uint32(p.id) {
+			return true
 		}
-		interop.EnumChildWindows(hWnd, callback, unsafe.Pointer(nil))
-		return 1
+		if checkClassName(hWnd) {
+			handle = hWnd
+			return false
+		}
+
+		interop.EnumChildWindows(hWnd, func(hWndChild uintptr) bool {
+			if checkClassName(hWndChild) {
+				handle = hWndChild
+				return false
+			}
+			return true
+		})
+
+		return handle == 0
 	})
-	interop.EnumWindows(callback, unsafe.Pointer(nil))
-	return uintptr(handle)
+	return handle
 }
 
 func (p *TProcess) ReadMemory(address uintptr, size int) []byte {
@@ -269,17 +278,15 @@ func (p *TProcess) GetObjFieldByType(obj uintptr, className string) uintptr {
 }
 
 func getWindowObject(window uintptr) uintptr {
-	var callback uintptr
 	var objPtr uintptr
 
-	callback = syscall.NewCallback(func(_, key, val, _ uintptr) uintptr {
+	interop.EnumPropsExW(window, func(_, key, val uintptr) bool {
 		if key > 0xFFFF && strings.HasPrefix(utf16PtrToString(key), "ControlOfs") {
 			objPtr = val
-			return 0
+			return false
 		}
-		return 1
+		return true
 	})
-	interop.EnumPropsExW(window, callback, 0)
 	return objPtr
 }
 
