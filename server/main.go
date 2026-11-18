@@ -7,10 +7,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 
 	"github.com/gorilla/websocket"
-	"github.com/todm/webremoteForSongbeamer/thumbnailstealer"
 )
 
 var upgrader = websocket.Upgrader{
@@ -36,7 +36,7 @@ func main() {
 	router := http.NewServeMux()
 
 	router.HandleFunc("/osc", handleWebsocket)
-	router.HandleFunc("/thumbnails", handleThumbnails)
+	router.HandleFunc("/thumbnails/{index}", handleThumbnails)
 	router.HandleFunc("/sbfiles/playlist", handleOSCFile("/playlist/filename"))
 	router.HandleFunc("/sbfiles/presentation", handleOSCFile("/presentation/filename"))
 	router.HandleFunc("/sbfiles/video", handleOSCFile("/video/filename"))
@@ -162,34 +162,25 @@ func handleThumbnails(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "no-store")
 
-	numThumbnails := 0
-	columns := 0
-
-	if c := r.URL.Query().Get("cols"); c != "" {
-		fmt.Sscanf(c, "%d", &columns)
-		msg := &OSCMessage{
-			Address: "/presentation/pagecount",
-		}
-		res, err := RequestOSC(cfg.SongbeamerAddr, *msg)
-		if err != nil || len(res.Arguments) == 0 {
-			http.Error(w, "Could not get osc response", 500)
-			return
-		}
-
-		if val, ok := res.Arguments[0].(int32); ok {
-			numThumbnails = int(val)
-		}
+	i, err := strconv.Atoi(r.PathValue("index"))
+	if err != nil {
+		i = 0
 	}
 
-	thumbnails, err := thumbnailstealer.Steal(cfg.ThumbnailSkipReset, numThumbnails, columns)
+	q, err := strconv.Atoi(r.URL.Query().Get("q"))
+	if err != nil || q < 0 || q > 100 {
+		q = 50
+	}
+
+	img, err := GetThumbnail(i)
 
 	if err != nil {
-		http.Error(w, "failed getting thumbnails", http.StatusInternalServerError)
+		http.Error(w, "failed getting thumbnail", http.StatusInternalServerError)
 		return
 	}
 
-	err = jpeg.Encode(w, thumbnails, &jpeg.Options{
-		Quality: cfg.ThumbnailQuality,
+	err = jpeg.Encode(w, img, &jpeg.Options{
+		Quality: q,
 	})
 
 	if err != nil {
