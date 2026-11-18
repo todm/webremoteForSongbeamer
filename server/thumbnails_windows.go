@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"strings"
@@ -17,7 +18,11 @@ import (
 
 const EXECUTABLE = "SongBeamer.exe"
 const WINDOW_CLASS = "TPresentationThumbNails"
+const IMG_MAX = 4096
+
 const pointersize = unsafe.Sizeof(uintptr(0))
+const bmBitsOffset = 4*4 + 2*2 + (pointersize-4)%pointersize
+const bmihOffset = bmBitsOffset + pointersize
 
 type VMTLayout struct {
 	selfCheck   uintptr
@@ -43,13 +48,13 @@ func GetThumbnail(index int) (*image.RGBA, error) {
 	}
 	defer p.Close()
 
-	hWnd := p.GetWindowHandle(WINDOW_CLASS)
-	if hWnd == 0 {
-		return nil, errors.New("could not find thumbnails window")
+	hWnd, err := p.GetWindowHandle(WINDOW_CLASS)
+	if err != nil {
+		return nil, err
 	}
-	wndObj := getWindowObject(hWnd)
+	wndObj, err := getWindowObject(hWnd)
 	if wndObj == 0 {
-		return nil, errors.New("could not get window object")
+		return nil, err
 	}
 
 	err = p.LearnVMT(wndObj)
@@ -57,31 +62,76 @@ func GetThumbnail(index int) (*image.RGBA, error) {
 		return nil, err
 	}
 
-	collection := p.GetObjFieldByType(wndObj, "TCollection")
-	list := p.GetObjFieldByName(collection, "FItems")
-	count := int(p.GetObjFieldByName(list, "FCount")) & 0xFFFFFFFF
-	row := p.GetObjFieldByName(list, "FItems")
+	collection, err := p.GetObjFieldByType(wndObj, "TCollection")
+	if err != nil {
+		return nil, err
+	}
+	list, err := p.GetObjFieldByName(collection, "FItems")
+	if err != nil {
+		return nil, err
+	}
+	row, err := p.GetObjFieldByName(list, "FItems")
+	if err != nil {
+		return nil, err
+	}
+	countRaw, err := p.GetObjFieldByName(list, "FCount")
+	if err != nil {
+		return nil, err
+	}
 
+	count := int(int32(countRaw))
 	if index < 0 || index >= count {
 		return nil, errors.New("image index out of bounds")
 	}
 
-	thumbnail := p.ReadAddress(row + uintptr(index*8))
-	bmpObj := p.GetObjFieldByType(thumbnail, "TBitmap")
-	bmpImg := p.GetObjFieldByName(bmpObj, "FImage")
-	info := p.ReadMemory(bmpImg+p.FindObjFieldByName(bmpImg, "FDIB"), 44)
+	thumbnail, ok := p.ReadAddress(row + uintptr(index)*pointersize)
+	if !ok {
+		return nil, errors.New("could not get thumbnail")
+	}
+
+	bmpObj, err := p.GetObjFieldByType(thumbnail, "TBitmap")
+	if err != nil {
+		return nil, err
+	}
+	bmpImg, err := p.GetObjFieldByName(bmpObj, "FImage")
+	if err != nil || !p.IsObject(bmpImg) {
+		return nil, fmt.Errorf("%w could not find image", err)
+	}
+	fdib, ok := p.FindObjFieldByName(bmpImg, "FDIB")
+	if !ok {
+		return nil, errors.New("could not find fdib field")
+	}
+
+	info, ok := p.ReadMemory(bmpImg+fdib, int(bmihOffset+12))
+	if !ok {
+		return nil, errors.New("could not get bitmap info")
+	}
 
 	width := int(int32(binary.LittleEndian.Uint32(info[4:])))
 	height := int(int32(binary.LittleEndian.Uint32(info[8:])))
 	bytesPerRow := int(int32(binary.LittleEndian.Uint32(info[12:])))
-	bytesPerPixel := int(binary.LittleEndian.Uint16(info[18:])) / 8
-	pixelsAddress := binary.LittleEndian.Uint64(info[24:])
-	upsideDown := int32(binary.LittleEndian.Uint32(info[40:])) > 0
+	bitsPerPixel := int(binary.LittleEndian.Uint16(info[18:]))
+	upsideDown := int32(binary.LittleEndian.Uint32(info[bmihOffset+8:])) > 0
 
-	if pixelsAddress == 0 || width <= 0 || height <= 0 || bytesPerPixel < 3 {
+	var pixelsAddress uintptr
+	if pointersize == 8 {
+		pixelsAddress = uintptr(binary.LittleEndian.Uint64(info[bmBitsOffset:]))
+	} else {
+		pixelsAddress = uintptr(binary.LittleEndian.Uint32(info[bmBitsOffset:]))
+	}
+
+	bytesPerPixel := bitsPerPixel / 8
+	if pixelsAddress == 0 ||
+		width <= 0 || height <= 0 ||
+		width > IMG_MAX || height > IMG_MAX ||
+		(bytesPerPixel != 3 && bytesPerPixel != 4) ||
+		bytesPerRow < width*bytesPerPixel {
 		return nil, errors.New("invalid image")
 	}
-	pixels := p.ReadMemory(uintptr(pixelsAddress), bytesPerRow*height)
+	pixels, ok := p.ReadMemory(pixelsAddress, bytesPerRow*height)
+	if !ok {
+		return nil, errors.New("could not read pixel data")
+	}
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 
 	for y := 0; y < height; y++ {
@@ -100,10 +150,10 @@ func GetThumbnail(index int) (*image.RGBA, error) {
 
 func OpenProcessByName(name string) (*TProcess, error) {
 	snapshot := interop.CreateToolhelp32Snapshot(0x02, 0) //TH32CS_SNAPPROCESS
-	defer syscall.CloseHandle(syscall.Handle(snapshot))
 	if snapshot == 0 {
 		return nil, errors.New("could not open toolhelp snapshot")
 	}
+	defer syscall.CloseHandle(syscall.Handle(snapshot))
 
 	var pid uintptr
 	var p interop.PROCESSENTRY32
@@ -115,10 +165,10 @@ func OpenProcessByName(name string) (*TProcess, error) {
 	}
 
 	if pid == 0 {
-		return nil, errors.New("could not find process")
+		return nil, fmt.Errorf("could not find process '%s'", name)
 	}
 
-	handle := interop.OpenProcess(0x0010|0x0400, 0, pid)
+	handle := interop.OpenProcess(0x0010|0x0400, 0, pid) // PROCESS_VM_READ | PROCESS_QUERY_INFORMATION
 
 	if handle == 0 {
 		return nil, errors.New("could not open process")
@@ -127,6 +177,7 @@ func OpenProcessByName(name string) (*TProcess, error) {
 	// check architecture mismatch
 	selfHandle, _ := syscall.GetCurrentProcess()
 	if interop.IsWow64Process(uintptr(selfHandle)) != interop.IsWow64Process(handle) {
+		interop.CloseHandle(handle)
 		return nil, errors.New("architecture mismatch")
 	}
 
@@ -137,10 +188,10 @@ func OpenProcessByName(name string) (*TProcess, error) {
 }
 
 func (p *TProcess) Close() {
-	defer interop.CloseHandle(p.h)
+	interop.CloseHandle(p.h)
 }
 
-func (p *TProcess) GetWindowHandle(className string) uintptr {
+func (p *TProcess) GetWindowHandle(className string) (uintptr, error) {
 	var handle uintptr
 
 	buffer := make([]uint16, 256)
@@ -168,30 +219,41 @@ func (p *TProcess) GetWindowHandle(className string) uintptr {
 
 		return handle == 0
 	})
-	return handle
+	if handle == 0 {
+		return 0, fmt.Errorf("could not find window with class '%s'", className)
+	}
+	return handle, nil
 }
 
-func (p *TProcess) ReadMemory(address uintptr, size int) []byte {
-	return interop.ReadProcessMemory(p.h, address, size, 0)
+func (p *TProcess) ReadMemory(address uintptr, size int) ([]byte, bool) {
+	if size < 0 || address == 0 {
+		return nil, false
+	}
+	buffer := make([]byte, size)
+	ok := interop.ReadProcessMemory(p.h, address, buffer)
+	return buffer, ok
 }
 
-func (p *TProcess) ReadAddress(address uintptr) uintptr {
-	data := p.ReadMemory(address, int(pointersize))
-	if pointersize == 8 {
-		return uintptr(binary.LittleEndian.Uint64(data))
+func (p *TProcess) ReadAddress(address uintptr) (uintptr, bool) {
+	data, ok := p.ReadMemory(address, int(pointersize))
+	if !ok {
+		return 0, false
+	}
+	if len(data) == 8 {
+		return uintptr(binary.LittleEndian.Uint64(data)), true
 	} else {
-		return uintptr(binary.LittleEndian.Uint32(data))
+		return uintptr(binary.LittleEndian.Uint32(data)), true
 	}
 }
 
 func (p *TProcess) LearnVMT(obj uintptr) error {
-	class := p.ReadAddress(obj)
-	if class == 0 {
-		return nil
+	class, ok := p.ReadAddress(obj)
+	if !ok || class == 0 {
+		return errors.New("faild learning vmt layout")
 	}
 	for i := uintptr(10); i <= 40; i++ {
 		offset := i * pointersize
-		if p.ReadAddress(class-offset) != class {
+		if self, ok := p.ReadAddress(class - offset); !ok || self != class {
 			continue
 		}
 		p.vmtSelfCheck = offset
@@ -204,15 +266,18 @@ func (p *TProcess) LearnVMT(obj uintptr) error {
 }
 
 func (p *TProcess) EnumObjFields(obj uintptr, cb func(name string, address uintptr) bool) {
-	for class := p.ReadAddress(obj); class != 0; class = p.ReadAddress(p.ReadAddress(class - p.vmtParentClass)) {
-		fieldTableAddress := p.ReadAddress(class - p.vmtFieldTable)
-		if fieldTableAddress == 0 {
+	for class, ok := p.ReadAddress(obj); class != 0 || !ok; class = p.GetClassParent(class) {
+		fieldTableAddress, ok := p.ReadAddress(class - p.vmtFieldTable)
+		if fieldTableAddress == 0 || !ok {
 			continue
 		}
 
-		fieldTable := p.ReadMemory(fieldTableAddress, 4096)
-		byteOffset := 0
+		fieldTable, ok := p.ReadMemory(fieldTableAddress, 4096)
+		if !ok {
+			continue
+		}
 
+		byteOffset := 0
 		// Section 1
 		count := int(binary.LittleEndian.Uint16(fieldTable[byteOffset:]))
 		byteOffset += 10
@@ -242,7 +307,7 @@ func (p *TProcess) EnumObjFields(obj uintptr, cb func(name string, address uintp
 	}
 }
 
-func (p *TProcess) FindObjFieldByName(obj uintptr, name string) uintptr {
+func (p *TProcess) FindObjFieldByName(obj uintptr, name string) (uintptr, bool) {
 	var field uintptr
 	p.EnumObjFields(obj, func(fname string, address uintptr) bool {
 		if fname == name {
@@ -252,32 +317,84 @@ func (p *TProcess) FindObjFieldByName(obj uintptr, name string) uintptr {
 		return true
 	})
 
-	return field
+	return field, field != 0
 }
 
-func (p *TProcess) GetObjFieldByName(obj uintptr, name string) uintptr {
-	return p.ReadAddress(obj + p.FindObjFieldByName(obj, name))
+func (p *TProcess) GetObjFieldByName(obj uintptr, name string) (uintptr, error) {
+	field, ok := p.FindObjFieldByName(obj, name)
+	if !ok {
+		return 0, fmt.Errorf("could not find filed with name %s", name)
+	}
+	address, ok := p.ReadAddress(obj + field)
+	if !ok {
+		return 0, fmt.Errorf("could not read field with name %s", name)
+	}
+	return address, nil
 }
 
-func (p *TProcess) GetObjFieldByType(obj uintptr, className string) uintptr {
+func (p *TProcess) GetObjFieldByType(obj uintptr, className string) (uintptr, error) {
 	var field uintptr
 	p.EnumObjFields(obj, func(fname string, address uintptr) bool {
-		v := p.ReadAddress(obj + address)
-		for class := p.ReadAddress(v); class != 0; class = p.ReadAddress(p.ReadAddress(class - p.vmtParentClass)) {
-			nameAddress := p.ReadAddress(class - p.vmtClassName)
-			nameLength := int(p.ReadMemory(nameAddress, 1)[0])
-			name := string(p.ReadMemory(nameAddress+1, nameLength))
-			if name == className {
+		v, ok := p.ReadAddress(obj + address)
+		if !ok || !p.IsObject(v) {
+			return true
+		}
+
+		for class, ok := p.ReadAddress(v); class != 0 && ok; class = p.GetClassParent(class) {
+			nameAddress, ok := p.ReadAddress(class - p.vmtClassName)
+			if !ok {
+				continue
+			}
+			nameLength, ok := p.ReadMemory(nameAddress, 1)
+			if !ok {
+				continue
+			}
+			nameBytes, ok := p.ReadMemory(nameAddress+1, int(nameLength[0]))
+			if !ok {
+				continue
+			}
+
+			if string(nameBytes) == className {
 				field = v
 				return false
 			}
 		}
 		return true
 	})
-	return field
+	if field == 0 {
+		return 0, fmt.Errorf("could not find field of type %s", className)
+	}
+	return field, nil
 }
 
-func getWindowObject(window uintptr) uintptr {
+func (p *TProcess) IsClass(class uintptr) bool {
+	self, ok := p.ReadAddress(class - p.vmtSelfCheck)
+	return ok && self == class
+}
+
+func (p *TProcess) IsObject(obj uintptr) bool {
+	class, ok := p.ReadAddress(obj)
+	return ok && p.IsClass(class)
+}
+
+func (p *TProcess) GetClassParent(class uintptr) uintptr {
+	parentAddress, ok := p.ReadAddress(class - p.vmtParentClass)
+	if !ok || parentAddress == 0 {
+		return 0
+	}
+	parent, ok := p.ReadAddress(parentAddress)
+	if !ok || parent == 0 {
+		return 0
+	}
+
+	if !p.IsClass(parent) {
+		return 0
+	}
+
+	return parent
+}
+
+func getWindowObject(window uintptr) (uintptr, error) {
 	var objPtr uintptr
 
 	interop.EnumPropsExW(window, func(_, key, val uintptr) bool {
@@ -287,7 +404,10 @@ func getWindowObject(window uintptr) uintptr {
 		}
 		return true
 	})
-	return objPtr
+	if objPtr == 0 {
+		return 0, errors.New("could not get window object")
+	}
+	return objPtr, nil
 }
 
 func utf16PtrToString(p uintptr) string {

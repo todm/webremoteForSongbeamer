@@ -68,10 +68,13 @@ func IsWow64Process(processHandle uintptr) bool {
 	return answer != 0
 }
 
-func ReadProcessMemory(hProcess uintptr, lpBaseAddress uintptr, nSize int, lpNumberOfBytesRead uintptr) []byte {
-	buffer := make([]byte, nSize)
-	pReadProcessMemory.Call(hProcess, lpBaseAddress, uintptr(unsafe.Pointer(&buffer[0])), uintptr(nSize), lpNumberOfBytesRead)
-	return buffer
+func ReadProcessMemory(hProcess uintptr, lpBaseAddress uintptr, buffer []byte) bool {
+	if len(buffer) == 0 {
+		return true
+	}
+	var lpNumberOfBytesRead uintptr
+	r, _, _ := pReadProcessMemory.Call(hProcess, lpBaseAddress, uintptr(unsafe.Pointer(&buffer[0])), uintptr(len(buffer)), uintptr(unsafe.Pointer(&lpNumberOfBytesRead)))
+	return r != 0 && lpNumberOfBytesRead == uintptr(len(buffer))
 }
 
 // ******************************** //
