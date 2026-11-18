@@ -1,14 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image"
 	"image/jpeg"
 	"net"
 	"net/http"
 	"os"
 	"strconv"
-	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -21,8 +23,6 @@ var upgrader = websocket.Upgrader{
 type staticFS struct {
 	root http.FileSystem
 }
-
-var busy = sync.Mutex{}
 
 func main() {
 	defer exit()
@@ -108,10 +108,7 @@ func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 				cancel()
 				return
 			}
-
-			busy.Lock()
 			udp.Write(message)
-			busy.Unlock()
 		}
 
 	}()
@@ -156,15 +153,12 @@ func handleOSCFile(address string) http.HandlerFunc {
 }
 
 func handleThumbnails(w http.ResponseWriter, r *http.Request) {
-	busy.Lock()
-	defer busy.Unlock()
-
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "no-store")
 
-	i, err := strconv.Atoi(r.PathValue("index"))
+	index, err := strconv.Atoi(r.PathValue("index"))
 	if err != nil {
-		i = 0
+		index = 0
 	}
 
 	q, err := strconv.Atoi(r.URL.Query().Get("q"))
@@ -172,20 +166,32 @@ func handleThumbnails(w http.ResponseWriter, r *http.Request) {
 		q = 50
 	}
 
-	img, err := GetThumbnail(i)
+	var img *image.RGBA
+	for i := 0; i < 10; i++ {
+		img, err = GetThumbnail(index)
+		if err == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 
 	if err != nil {
 		http.Error(w, "failed getting thumbnail", http.StatusInternalServerError)
 		return
 	}
 
-	err = jpeg.Encode(w, img, &jpeg.Options{
-		Quality: q,
-	})
+	var buf bytes.Buffer
+	err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: q})
 
 	if err != nil {
 		http.Error(w, "failed to encode image", http.StatusInternalServerError)
 		return
+	}
+
+	w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+	_, err = buf.WriteTo(w)
+	if err != nil {
+		http.Error(w, "failed sending image", http.StatusInternalServerError)
 	}
 }
 
