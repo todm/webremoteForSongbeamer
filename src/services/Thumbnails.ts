@@ -1,37 +1,6 @@
-import { canvasToObjectUrl, cropImage, loadImage } from '../utils';
 
-export async function getSongbeamerThumbnails(count: number, cols?: number) {
-    let url = '/thumbnails';
-    if (cols) url += `?cols=${cols}`;
-
-    const img = await loadImage(url, true);
-    const th = Math.ceil(img.naturalHeight / count);
-    const images = await Promise.all([...Array(count).keys()].map(async i => cropImage(img, 0, -i * th, img.width, th)));
-    return images.map(e => e.src);
-}
-
-export async function getPDFThumbnails(scale = 1) {
-    const pdfjs = await import('pdfjs-dist');
-    pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
-
-    const data = await fetch('/sbfiles/presentation', { cache: 'no-store' }).then(e => e.arrayBuffer());
-    const pdf = await pdfjs.getDocument({ data }).promise;
-    return Promise.all(
-        [...Array(pdf.numPages).keys()].map(async i => {
-            const page = await pdf.getPage(i + 1);
-            const viewport = page.getViewport({ scale });
-            const canvas = document.createElement('canvas');
-            canvas.width = viewport.width;
-            canvas.height = viewport.height;
-            await page.render({
-                canvas,
-                canvasContext: canvas.getContext('2d', { alpha: true })!,
-                viewport,
-                intent: 'print'
-            }).promise;
-            return canvasToObjectUrl(canvas);
-        })
-    );
+export async function getSongbeamerThumbnails(count: number, quality: number = 50) {
+    return [...Array(count).keys()].map(i => `/thumbnails/${i}?q=${quality}&cachebuster=${Math.random().toString(16).substring(2)}`)
 }
 
 const VERSE_MARKERS = [

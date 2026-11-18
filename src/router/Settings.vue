@@ -3,18 +3,15 @@ import { useConfigStore } from '../stores/config';
 import { PlusIcon, MinusIcon } from '@lucide/vue';
 import { clamp } from '../utils';
 import { useSongbeamerStore } from '../stores/songbeamer';
-import { onMounted, ref, watch } from 'vue';
+import { watch } from 'vue';
 import { SUPPORTED_ENCODINGS } from '../utils/constants';
-import { CircleArrowUpIcon } from '@lucide/vue';
-import packageJson from '../../package.json';
 
 const config = useConfigStore();
 const sb = useSongbeamerStore();
 const addGridSize = (s = 1) => (config.presentation.gridSize = clamp(config.presentation.gridSize + s, 1, 10));
-const addGridCols = (s = 1) => (config.presentation.gridCaptureCols = clamp(config.presentation.gridCaptureCols + s, 1, 10));
 
 watch(
-    () => [config.presentation.localPdfRendering, config.presentation.localSngRendering],
+    () => [config.presentation.localSngRendering],
     () => {
         sb.forceResync();
     }
@@ -26,37 +23,9 @@ function reset() {
     config.reset();
     location.reload();
 }
-
-// Check for updates
-const newVersion = ref<string>();
-onMounted(async () => {
-    const { tag_name } = await fetch('https://api.github.com/repos/todm/webremoteforsongbeamer/releases/latest').then((res) => res.json());
-
-    const localVersion = packageJson.version.match(/(\d+)\.(\d+)\.(\d+)/);
-    const remoteVersion = tag_name.match(/(\d+)\.(\d+)\.(\d+)/);
-
-    if (!localVersion || !remoteVersion) {
-        return;
-    }
-
-    for (let i = 1; i < Math.max(localVersion.length, remoteVersion.length); i++) {
-        if (parseInt(remoteVersion[i]) > parseInt(localVersion[i])) {
-            newVersion.value = tag_name;
-            break;
-        } else if (parseInt(remoteVersion[i]) < parseInt(localVersion[i])) {
-            break;
-        }
-    }
-});
 </script>
 
 <template>
-    <div class="alert lg:my-4 lg:w-4xl mx-auto" v-if="!!newVersion">
-        <CircleArrowUpIcon class="h-4 w-4" />
-        A new version is available {{ newVersion }}
-        <a href="https://github.com/todm/webremoteForSongbeamer/releases/latest" target="_blank"
-            class="link">Download</a>
-    </div>
     <div class="border-base-300 bg-base-200 mx-auto rounded-md border px-4 py-4 shadow-md lg:my-4 lg:w-4xl">
         <h1 class="font-heading">Settings</h1>
 
@@ -115,11 +84,16 @@ onMounted(async () => {
         <fieldset class="fieldset border-base-300 rounded-box fieldset-grid-cols grid gap-4 border p-4">
             <legend class="fieldset-legend">Rendering</legend>
 
-            <label class="label"> Render PDF locally </label>
-            <div>
-                <input type="checkbox" v-model="config.presentation.localPdfRendering" class="toggle" />
-                <div class="badge badge-accent badge-xs ml-2">Recomended</div>
+            <label class="label">Thumbnail quality</label>
+            <div class="flex gap-2 items-center">
+                <input type="range" min="1" max="100" class="range range-xs"
+                    v-model="config.presentation.thumbnailQuality" />
+                {{ config.presentation.thumbnailQuality }}%
+
             </div>
+            <p class="text-xs text-base-content/30 col-span-2 wrap-normal">
+                Thumbnail quality is also dependent on the display size inside of songbeamer.
+            </p>
 
             <label class="label"> Render SNG as text </label>
             <div>
@@ -132,24 +106,6 @@ onMounted(async () => {
                 v-if="config.presentation.localSngRendering">
                 <option v-for="enc in SUPPORTED_ENCODINGS">{{ enc }}</option>
             </select>
-
-            <label class="label"> Use Grid Splitting </label>
-            <div class="flex items-center gap-3 flex-wrap">
-                <input type="checkbox" v-model="config.presentation.gridCaptureEnabled" class="toggle" />
-                <div class="join" :class="{ '*:btn-disabled': !config.presentation.gridCaptureEnabled }">
-                    <button class="btn join-item btn-square btn-sm" @click="addGridCols(-1)">
-                        <MinusIcon class="h-3 w-3" />
-                    </button>
-                    <button class="btn join-item btn-square btn-sm">{{ config.presentation.gridCaptureCols }}</button>
-                    <button class="btn join-item btn-square btn-sm" @click="addGridCols(1)">
-                        <PlusIcon class="h-3 w-3" />
-                    </button>
-                </div>
-            </div>
-            <p class="text-xs text-base-content/30 col-span-2 wrap-normal">
-                If you enable grid splitting, make sure to set the number of columns to match the number of columns in
-                songbeamer. Otherwise, the grid will be split incorrectly and the output will look wrong.
-            </p>
         </fieldset>
 
         <fieldset class="fieldset border-base-300 rounded-box fieldset-grid-cols grid gap-4 border p-4">
