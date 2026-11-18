@@ -77,7 +77,9 @@ export const useSongbeamerStore = defineStore('songbeamer', () => {
     async function _syncPages() {
         state.presentation.pages = Array(state.presentation.pagecount)
             .fill(0)
-            .map(_ => ({}));
+            .map(_ => ({
+                caption: ''
+            }));
 
         const ext = state.presentation.filename.split('.').pop()?.toLowerCase() || '';
         const cacheKey = _getCurrentCacheKey();
