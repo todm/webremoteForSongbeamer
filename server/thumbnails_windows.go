@@ -266,7 +266,7 @@ func (p *TProcess) LearnVMT(obj uintptr) error {
 }
 
 func (p *TProcess) EnumObjFields(obj uintptr, cb func(name string, address uintptr) bool) {
-	for class, ok := p.ReadAddress(obj); class != 0 || !ok; class = p.GetClassParent(class) {
+	for class, ok := p.ReadAddress(obj); ok && class != 0; class = p.GetClassParent(class) {
 		fieldTableAddress, ok := p.ReadAddress(class - p.vmtFieldTable)
 		if fieldTableAddress == 0 || !ok {
 			continue
@@ -321,6 +321,10 @@ func (p *TProcess) FindObjFieldByName(obj uintptr, name string) (uintptr, bool) 
 }
 
 func (p *TProcess) GetObjFieldByName(obj uintptr, name string) (uintptr, error) {
+	if obj == 0 {
+		return 0, errors.New("invalid object provided")
+	}
+
 	field, ok := p.FindObjFieldByName(obj, name)
 	if !ok {
 		return 0, fmt.Errorf("could not find filed with name %s", name)
@@ -333,6 +337,10 @@ func (p *TProcess) GetObjFieldByName(obj uintptr, name string) (uintptr, error) 
 }
 
 func (p *TProcess) GetObjFieldByType(obj uintptr, className string) (uintptr, error) {
+	if obj == 0 {
+		return 0, errors.New("invalid object provided")
+	}
+
 	var field uintptr
 	p.EnumObjFields(obj, func(fname string, address uintptr) bool {
 		v, ok := p.ReadAddress(obj + address)
