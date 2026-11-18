@@ -21,6 +21,7 @@ var (
 	pCloseHandle              = kernel32.NewProc("CloseHandle")
 	pReadProcessMemory        = kernel32.NewProc("ReadProcessMemory")
 	pIsWow64Process           = kernel32.NewProc("IsWow64Process")
+	pWaitForSingleObject      = kernel32.NewProc("WaitForSingleObject")
 )
 
 type PROCESSENTRY32 struct {
@@ -77,6 +78,11 @@ func ReadProcessMemory(hProcess uintptr, lpBaseAddress uintptr, buffer []byte) b
 	return r != 0 && lpNumberOfBytesRead == uintptr(len(buffer))
 }
 
+func WaitForSingleObject(hProcess uintptr, ms uintptr) uintptr {
+	r, _, _ := pWaitForSingleObject.Call(hProcess, ms)
+	return r
+}
+
 // ******************************** //
 // *            user32            * //
 // ******************************** //
@@ -89,6 +95,7 @@ var (
 	pGetWindowThreadProcessId = user32.NewProc("GetWindowThreadProcessId")
 	pGetClassNameW            = user32.NewProc("GetClassNameW")
 	pEnumPropsExW             = user32.NewProc("EnumPropsExW")
+	pIsWindow                 = user32.NewProc("IsWindow")
 
 	pEnumWindowsProc = syscall.NewCallback(func(hWnd uintptr, lParam uintptr) uintptr {
 		return boolToPtr(lookupCallback[func(hWnd uintptr) bool](lParam)(hWnd))
@@ -129,6 +136,11 @@ func EnumPropsExW(hWnd uintptr, cb func(p1, p2, p3 uintptr) bool) uintptr {
 	defer unqueueCallback(cbId)
 	r, _, _ := pEnumPropsExW.Call(hWnd, pPropEnumProcEx, cbId)
 	return r
+}
+
+func IsWindow(hWnd uintptr) bool {
+	r, _, _ := pIsWindow.Call(hWnd)
+	return r > 0
 }
 
 // ******************************** //

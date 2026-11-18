@@ -32,8 +32,9 @@ type VMTLayout struct {
 }
 
 type TProcess struct {
-	id uintptr
-	h  uintptr
+	id   uintptr
+	h    uintptr
+	hWnd uintptr
 
 	vmtSelfCheck   uintptr
 	vmtFieldTable  uintptr
@@ -41,25 +42,44 @@ type TProcess struct {
 	vmtParentClass uintptr
 }
 
+var process *TProcess
+
 func GetThumbnail(index int) (*image.RGBA, error) {
-	p, err := OpenProcessByName(EXECUTABLE)
-	if err != nil {
-		return nil, err
-	}
-	defer p.Close()
+	var err error
+	var wndObj uintptr
+	if process == nil || !process.IsAlive() {
+		process.Close()
+		process, err = OpenProcessByName(EXECUTABLE)
+		if err != nil {
+			return nil, err
+		}
 
-	hWnd, err := p.GetWindowHandle(WINDOW_CLASS)
-	if err != nil {
-		return nil, err
+		process.hWnd, err = process.GetWindowHandle(WINDOW_CLASS)
+		if err != nil {
+			process.Close()
+			return nil, err
+		}
+
+		wndObj, err = getWindowObject(process.hWnd)
+		if err != nil {
+			process.Close()
+			return nil, err
+		}
+
+		err = process.LearnVMT(wndObj)
+		if err != nil {
+			process.Close()
+			return nil, err
+		}
 	}
-	wndObj, err := getWindowObject(hWnd)
+
+	p := process
+
 	if wndObj == 0 {
-		return nil, err
-	}
-
-	err = p.LearnVMT(wndObj)
-	if err != nil {
-		return nil, err
+		wndObj, err = getWindowObject(p.hWnd)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	collection, err := p.GetObjFieldByType(wndObj, "TCollection")
@@ -168,7 +188,7 @@ func OpenProcessByName(name string) (*TProcess, error) {
 		return nil, fmt.Errorf("could not find process '%s'", name)
 	}
 
-	handle := interop.OpenProcess(0x0010|0x0400, 0, pid) // PROCESS_VM_READ | PROCESS_QUERY_INFORMATION
+	handle := interop.OpenProcess(0x00100000|0x0010|0x0400, 0, pid) // SYNCHRONIZE | PROCESS_VM_READ | PROCESS_QUERY_INFORMATION
 
 	if handle == 0 {
 		return nil, errors.New("could not open process")
@@ -187,8 +207,24 @@ func OpenProcessByName(name string) (*TProcess, error) {
 	}, nil
 }
 
+func (p *TProcess) IsAlive() bool {
+	if p == nil || p.h == 0 || p.hWnd == 0 {
+		return false
+	}
+	if interop.WaitForSingleObject(p.h, 0) != 0x00000102 { // WAIT_TIMEOUT
+		return false
+	}
+	if !interop.IsWindow(p.hWnd) || interop.GetWindowThreadProcessId(p.hWnd) != uint32(p.id) {
+		return false
+	}
+	return true
+}
+
 func (p *TProcess) Close() {
-	interop.CloseHandle(p.h)
+	if process != nil {
+		interop.CloseHandle(p.h)
+		process = nil
+	}
 }
 
 func (p *TProcess) GetWindowHandle(className string) (uintptr, error) {
