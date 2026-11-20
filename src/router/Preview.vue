@@ -5,11 +5,11 @@ import PageContent from '../components/PageContent.vue';
 
 const sb = useSongbeamerStore();
 
-const page = computed(() => sb.presentation.pages[sb.presentation.page - 1] as PageItem | undefined);
+const page = computed(() => sb.presentation.pages[sb.presentation.page] as PageItem | undefined);
 </script>
 
 <template>
     <div class="h-full w-full">
-        <PageContent :page="page" aspect-ratio="auto" class="h-full w-full" />
+        <PageContent :page="page" aspect-ratio="auto" :no-header="true" class="h-full w-full" />
     </div>
 </template>

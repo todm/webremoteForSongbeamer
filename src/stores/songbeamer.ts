@@ -75,11 +75,12 @@ export const useSongbeamerStore = defineStore('songbeamer', () => {
     }
 
     async function _syncPages() {
-        state.presentation.pages = Array(state.presentation.pagecount)
+        state.presentation.pages = Array(state.presentation.pagecount+1)
             .fill(0)
             .map(_ => ({
                 caption: ''
             }));
+        osc.sync(state, true, "/presentation/pages")
 
         const ext = state.presentation.filename.split('.').pop()?.toLowerCase() || '';
         const cacheKey = _getCurrentCacheKey();
@@ -88,7 +89,7 @@ export const useSongbeamerStore = defineStore('songbeamer', () => {
             pages.forEach((e, i) => (state.presentation.pages[i]._sng = e));
             cache.set(cacheKey, pages);
         } else {
-            const pages = cache.get(cacheKey) || (await getSongbeamerThumbnails(state.presentation.pagecount, config.presentation.thumbnailQuality));
+            const pages = cache.get(cacheKey) || (await getSongbeamerThumbnails(state.presentation.pages.length, config.presentation.thumbnailQuality));
             pages.forEach((e, i) => (state.presentation.pages[i]._img = e));
             cache.set(cacheKey, pages);
         }
