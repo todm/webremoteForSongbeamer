@@ -315,6 +315,7 @@ func (p *TProcess) LearnVMT(obj uintptr) error {
 }
 
 func (p *TProcess) EnumObjFields(obj uintptr, cb func(name string, address uintptr) bool) {
+	sptr := int(pointersize)
 	for class, ok := p.ReadAddress(obj); ok && class != 0; class = p.GetClassParent(class) {
 		fieldTableAddress, ok := p.ReadAddress(class - p.vmtFieldTable)
 		if fieldTableAddress == 0 || !ok {
@@ -329,7 +330,7 @@ func (p *TProcess) EnumObjFields(obj uintptr, cb func(name string, address uintp
 		byteOffset := 0
 		// Section 1
 		count := int(binary.LittleEndian.Uint16(fieldTable[byteOffset:]))
-		byteOffset += 10
+		byteOffset += 2 + sptr
 		for i := 0; i < count; i++ {
 			position := binary.LittleEndian.Uint32(fieldTable[byteOffset:])
 			nameLength := int(fieldTable[byteOffset+6])
@@ -344,13 +345,13 @@ func (p *TProcess) EnumObjFields(obj uintptr, cb func(name string, address uintp
 		count = int(binary.LittleEndian.Uint16(fieldTable[byteOffset:]))
 		byteOffset += 2
 		for i := 0; i < count; i++ {
-			position := binary.LittleEndian.Uint32(fieldTable[byteOffset+9:])
-			nameLength := int(fieldTable[byteOffset+13])
-			name := string(fieldTable[byteOffset+14 : byteOffset+14+nameLength])
+			position := binary.LittleEndian.Uint32(fieldTable[byteOffset+1+sptr:])
+			nameLength := int(fieldTable[byteOffset+5+sptr])
+			name := string(fieldTable[byteOffset+6+sptr : byteOffset+6+sptr+nameLength])
 			if !cb(name, uintptr(position)) {
 				return
 			}
-			byteOffset += 14 + nameLength
+			byteOffset += 6 + sptr + nameLength
 			byteOffset += int(binary.LittleEndian.Uint16(fieldTable[byteOffset:]))
 		}
 	}
