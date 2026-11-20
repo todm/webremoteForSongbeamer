@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/color"
 	"strings"
+	"sync"
 	"syscall"
 	"unicode/utf16"
 	"unsafe"
@@ -43,43 +44,28 @@ type TProcess struct {
 }
 
 var process *TProcess
+var processMu sync.Mutex
 
 func GetThumbnail(index int) (*image.RGBA, error) {
+	processMu.Lock()
+	defer processMu.Unlock()
+
 	var err error
-	var wndObj uintptr
 	if process == nil || !process.IsAlive() {
-		process.Close()
-		process, err = OpenProcessByName(EXECUTABLE)
-		if err != nil {
-			return nil, err
-		}
-
-		process.hWnd, err = process.GetWindowHandle(WINDOW_CLASS)
-		if err != nil {
+		if process != nil {
 			process.Close()
-			return nil, err
 		}
-
-		wndObj, err = getWindowObject(process.hWnd)
+		process, err = GetProcess()
 		if err != nil {
-			process.Close()
-			return nil, err
-		}
-
-		err = process.LearnVMT(wndObj)
-		if err != nil {
-			process.Close()
 			return nil, err
 		}
 	}
 
 	p := process
 
-	if wndObj == 0 {
-		wndObj, err = getWindowObject(p.hWnd)
-		if err != nil {
-			return nil, err
-		}
+	wndObj, err := getWindowObject(p.hWnd)
+	if err != nil {
+		return nil, err
 	}
 
 	collection, err := p.GetObjFieldByType(wndObj, "TCollection")
@@ -152,6 +138,7 @@ func GetThumbnail(index int) (*image.RGBA, error) {
 	if !ok {
 		return nil, errors.New("could not read pixel data")
 	}
+
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 
 	for y := 0; y < height; y++ {
@@ -168,24 +155,10 @@ func GetThumbnail(index int) (*image.RGBA, error) {
 	return img, nil
 }
 
-func OpenProcessByName(name string) (*TProcess, error) {
-	snapshot := interop.CreateToolhelp32Snapshot(0x02, 0) //TH32CS_SNAPPROCESS
-	if snapshot == 0 {
-		return nil, errors.New("could not open toolhelp snapshot")
-	}
-	defer syscall.CloseHandle(syscall.Handle(snapshot))
-
-	var pid uintptr
-	var p interop.PROCESSENTRY32
-	for ok := interop.Process32First(snapshot, &p); ok; ok = interop.Process32Next(snapshot, &p) {
-		if strings.EqualFold(syscall.UTF16ToString(p.SzExeFile[:]), name) {
-			pid = uintptr(p.Th32ProcessID)
-			break
-		}
-	}
-
-	if pid == 0 {
-		return nil, fmt.Errorf("could not find process '%s'", name)
+func GetProcess() (*TProcess, error) {
+	pid, err := GetProcessByName(EXECUTABLE)
+	if err != nil {
+		return nil, err
 	}
 
 	handle := interop.OpenProcess(0x00100000|0x0010|0x0400, 0, pid) // SYNCHRONIZE | PROCESS_VM_READ | PROCESS_QUERY_INFORMATION
@@ -201,10 +174,53 @@ func OpenProcessByName(name string) (*TProcess, error) {
 		return nil, errors.New("architecture mismatch")
 	}
 
-	return &TProcess{
+	p := &TProcess{
 		id: pid,
 		h:  handle,
-	}, nil
+	}
+
+	hWnd, err := p.GetWindowHandle(WINDOW_CLASS)
+	if err != nil {
+		p.Close()
+		return nil, err
+	}
+	p.hWnd = hWnd
+
+	wndObj, err := getWindowObject(hWnd)
+	if err != nil {
+		p.Close()
+		return nil, err
+	}
+
+	err = p.LearnVMT(wndObj)
+	if err != nil {
+		p.Close()
+		return nil, err
+	}
+
+	return p, nil
+}
+
+func GetProcessByName(name string) (uintptr, error) {
+	snapshot := interop.CreateToolhelp32Snapshot(0x02, 0) //TH32CS_SNAPPROCESS
+	if snapshot == 0 {
+		return 0, errors.New("could not open toolhelp snapshot")
+	}
+	defer syscall.CloseHandle(syscall.Handle(snapshot))
+
+	var pid uintptr
+	var p interop.PROCESSENTRY32
+	for ok := interop.Process32First(snapshot, &p); ok; ok = interop.Process32Next(snapshot, &p) {
+		if strings.EqualFold(syscall.UTF16ToString(p.SzExeFile[:]), name) {
+			pid = uintptr(p.Th32ProcessID)
+			break
+		}
+	}
+
+	if pid == 0 {
+		return 0, fmt.Errorf("could not find process '%s'", name)
+	}
+	return pid, nil
 }
 
 func (p *TProcess) IsAlive() bool {
@@ -221,10 +237,7 @@ func (p *TProcess) IsAlive() bool {
 }
 
 func (p *TProcess) Close() {
-	if process != nil {
-		interop.CloseHandle(p.h)
-		process = nil
-	}
+	interop.CloseHandle(p.h)
 }
 
 func (p *TProcess) GetWindowHandle(className string) (uintptr, error) {
