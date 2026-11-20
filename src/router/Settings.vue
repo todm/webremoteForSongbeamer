@@ -96,10 +96,7 @@ function reset() {
             </p>
 
             <label class="label"> Render SNG as text </label>
-            <div>
-                <input type="checkbox" v-model="config.presentation.localSngRendering" class="toggle" />
-                <div class="badge badge-accent badge-xs ml-2">Recomended</div>
-            </div>
+            <input type="checkbox" v-model="config.presentation.localSngRendering" class="toggle" />
 
             <label class="label" v-if="config.presentation.localSngRendering">SNG Encoding</label>
             <select class="select select-sm w-32" v-model="config.presentation.sngEncoding"

@@ -7,7 +7,7 @@ export const useConfigStore = defineStore('config', () => {
     const state = reactive({
         presentation: {
             gridSize: 3,
-            localSngRendering: true,
+            localSngRendering: false,
             sngEncoding: 'utf-8',
             thumbnailQuality: 50
         },
