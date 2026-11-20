@@ -4,8 +4,6 @@ package main
 
 import (
 	"encoding/binary"
-	"errors"
-	"fmt"
 	"image"
 	"image/color"
 	"strings"
@@ -14,28 +12,23 @@ import (
 	"unicode/utf16"
 	"unsafe"
 
-	"github.com/todm/webremoteForSongbeamer/interop"
+	"golang.org/x/sys/windows"
 )
 
-const EXECUTABLE = "SongBeamer.exe"
-const WINDOW_CLASS = "TPresentationThumbNails"
-const IMG_MAX = 4096
+const (
+	sbExecutable  = "SongBeamer.exe"
+	sbWindowClass = "TPresentationThumbNails"
+	imgMax        = 4096
 
-const pointersize = unsafe.Sizeof(uintptr(0))
-const bmBitsOffset = 4*4 + 2*2 + (pointersize-4)%pointersize
-const bmihOffset = bmBitsOffset + pointersize
-
-type VMTLayout struct {
-	selfCheck   uintptr
-	fieldTable  uintptr
-	className   uintptr
-	parentClass uintptr
-}
+	pointersize  = unsafe.Sizeof(uintptr(0))
+	bmBitsOffset = 4*4 + 2*2 + (pointersize-4)%pointersize
+	bmihOffset   = bmBitsOffset + pointersize
+)
 
 type TProcess struct {
-	id   uintptr
-	h    uintptr
-	hWnd uintptr
+	id   uint32
+	h    windows.Handle
+	hWnd windows.HWND
 
 	vmtSelfCheck   uintptr
 	vmtFieldTable  uintptr
@@ -43,8 +36,10 @@ type TProcess struct {
 	vmtParentClass uintptr
 }
 
-var process *TProcess
-var processMu sync.Mutex
+var (
+	process   *TProcess
+	processMu sync.Mutex
+)
 
 func GetThumbnail(index int) (*image.RGBA, error) {
 	processMu.Lock()
@@ -87,12 +82,12 @@ func GetThumbnail(index int) (*image.RGBA, error) {
 
 	count := int(int32(countRaw))
 	if index < 0 || index >= count {
-		return nil, errors.New("image index out of bounds")
+		return nil, ErrIndexOutOfBounds
 	}
 
-	thumbnail, ok := p.ReadAddress(row + uintptr(index)*pointersize)
-	if !ok {
-		return nil, errors.New("could not get thumbnail")
+	thumbnail, err := p.ReadAddress(row + uintptr(index)*pointersize)
+	if err != nil {
+		return nil, err
 	}
 
 	bmpObj, err := p.GetObjFieldByType(thumbnail, "TBitmap")
@@ -100,17 +95,20 @@ func GetThumbnail(index int) (*image.RGBA, error) {
 		return nil, err
 	}
 	bmpImg, err := p.GetObjFieldByName(bmpObj, "FImage")
-	if err != nil || !p.IsObject(bmpImg) {
-		return nil, fmt.Errorf("%w could not find image", err)
+	if err != nil {
+		return nil, err
+	}
+	if !p.IsObject(bmpImg) {
+		return nil, ErrImgInvalid
 	}
 	fdib, ok := p.FindObjFieldByName(bmpImg, "FDIB")
 	if !ok {
-		return nil, errors.New("could not find fdib field")
+		return nil, ErrFdibMissing
 	}
 
-	info, ok := p.ReadMemory(bmpImg+fdib, int(bmihOffset+12))
-	if !ok {
-		return nil, errors.New("could not get bitmap info")
+	info, err := p.ReadMemory(bmpImg+fdib, int(bmihOffset+12))
+	if err != nil {
+		return nil, err
 	}
 
 	width := int(int32(binary.LittleEndian.Uint32(info[4:])))
@@ -129,14 +127,14 @@ func GetThumbnail(index int) (*image.RGBA, error) {
 	bytesPerPixel := bitsPerPixel / 8
 	if pixelsAddress == 0 ||
 		width <= 0 || height <= 0 ||
-		width > IMG_MAX || height > IMG_MAX ||
+		width > imgMax || height > imgMax ||
 		(bytesPerPixel != 3 && bytesPerPixel != 4) ||
 		bytesPerRow < width*bytesPerPixel {
-		return nil, errors.New("invalid image")
+		return nil, ErrImgInvalid
 	}
-	pixels, ok := p.ReadMemory(pixelsAddress, bytesPerRow*height)
-	if !ok {
-		return nil, errors.New("could not read pixel data")
+	pixels, err := p.ReadMemory(pixelsAddress, bytesPerRow*height)
+	if err != nil {
+		return nil, err
 	}
 
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
@@ -156,22 +154,32 @@ func GetThumbnail(index int) (*image.RGBA, error) {
 }
 
 func GetProcess() (*TProcess, error) {
-	pid, err := GetProcessByName(EXECUTABLE)
+	pid, err := GetProcessByName(sbExecutable)
+	if err != nil {
+		return nil, err
+	}
+	handle, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_VM_READ|windows.PROCESS_QUERY_INFORMATION, false, pid)
 	if err != nil {
 		return nil, err
 	}
 
-	handle := interop.OpenProcess(0x00100000|0x0010|0x0400, 0, pid) // SYNCHRONIZE | PROCESS_VM_READ | PROCESS_QUERY_INFORMATION
-
-	if handle == 0 {
-		return nil, errors.New("could not open process")
-	}
-
 	// check architecture mismatch
 	selfHandle, _ := syscall.GetCurrentProcess()
-	if interop.IsWow64Process(uintptr(selfHandle)) != interop.IsWow64Process(handle) {
-		interop.CloseHandle(handle)
-		return nil, errors.New("architecture mismatch")
+	var selfWow, handleWow bool
+	err = windows.IsWow64Process(windows.Handle(selfHandle), &selfWow)
+	if err != nil {
+		windows.CloseHandle(handle)
+		return nil, err
+	}
+	err = windows.IsWow64Process(handle, &handleWow)
+	if err != nil {
+		windows.CloseHandle(handle)
+		return nil, err
+	}
+
+	if selfWow != handleWow {
+		windows.CloseHandle(handle)
+		return nil, ErrArchMismatch
 	}
 
 	p := &TProcess{
@@ -179,7 +187,7 @@ func GetProcess() (*TProcess, error) {
 		h:  handle,
 	}
 
-	hWnd, err := p.GetWindowHandle(WINDOW_CLASS)
+	hWnd, err := p.GetWindowHandle(sbWindowClass)
 	if err != nil {
 		p.Close()
 		return nil, err
@@ -201,24 +209,25 @@ func GetProcess() (*TProcess, error) {
 	return p, nil
 }
 
-func GetProcessByName(name string) (uintptr, error) {
-	snapshot := interop.CreateToolhelp32Snapshot(0x02, 0) //TH32CS_SNAPPROCESS
-	if snapshot == 0 {
-		return 0, errors.New("could not open toolhelp snapshot")
+func GetProcessByName(name string) (uint32, error) {
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return 0, err
 	}
-	defer syscall.CloseHandle(syscall.Handle(snapshot))
+	defer windows.CloseHandle(snapshot)
 
-	var pid uintptr
-	var p interop.PROCESSENTRY32
-	for ok := interop.Process32First(snapshot, &p); ok; ok = interop.Process32Next(snapshot, &p) {
-		if strings.EqualFold(syscall.UTF16ToString(p.SzExeFile[:]), name) {
-			pid = uintptr(p.Th32ProcessID)
+	var pid uint32
+	var p windows.ProcessEntry32
+	p.Size = uint32(unsafe.Sizeof(p))
+	for err := windows.Process32First(snapshot, &p); err == nil; err = windows.Process32Next(snapshot, &p) {
+		if strings.EqualFold(syscall.UTF16ToString(p.ExeFile[:]), name) {
+			pid = p.ProcessID
 			break
 		}
 	}
 
 	if pid == 0 {
-		return 0, fmt.Errorf("could not find process '%s'", name)
+		return 0, ErrProcessNotFound
 	}
 	return pid, nil
 }
@@ -227,30 +236,35 @@ func (p *TProcess) IsAlive() bool {
 	if p == nil || p.h == 0 || p.hWnd == 0 {
 		return false
 	}
-	if interop.WaitForSingleObject(p.h, 0) != 0x00000102 { // WAIT_TIMEOUT
+	if r, err := windows.WaitForSingleObject(p.h, 0); err != nil || r != uint32(windows.WAIT_TIMEOUT) {
 		return false
 	}
-	if !interop.IsWindow(p.hWnd) || interop.GetWindowThreadProcessId(p.hWnd) != uint32(p.id) {
+	if !windows.IsWindow(p.hWnd) {
 		return false
 	}
 	return true
 }
 
 func (p *TProcess) Close() {
-	interop.CloseHandle(p.h)
+	windows.CloseHandle(p.h)
 }
 
-func (p *TProcess) GetWindowHandle(className string) (uintptr, error) {
-	var handle uintptr
+func (p *TProcess) GetWindowHandle(className string) (windows.HWND, error) {
+	var handle windows.HWND
 
 	buffer := make([]uint16, 256)
-	checkClassName := func(hWnd uintptr) bool {
-		copied := interop.GetClassName(hWnd, buffer)
+	checkClassName := func(hWnd windows.HWND) bool {
+		copied, err := windows.GetClassName(hWnd, &buffer[0], int32(len(buffer)))
+		if err != nil {
+			return false
+		}
 		return strings.EqualFold(syscall.UTF16ToString(buffer[:copied]), className)
 	}
 
-	interop.EnumWindows(func(hWnd uintptr) bool {
-		if interop.GetWindowThreadProcessId(hWnd) != uint32(p.id) {
+	EnumWindows(func(hWnd windows.HWND) bool {
+		var pid uint32
+		windows.GetWindowThreadProcessId(hWnd, &pid)
+		if pid != p.id {
 			return true
 		}
 		if checkClassName(hWnd) {
@@ -258,7 +272,7 @@ func (p *TProcess) GetWindowHandle(className string) (uintptr, error) {
 			return false
 		}
 
-		interop.EnumChildWindows(hWnd, func(hWndChild uintptr) bool {
+		EnumChildWindows(hWnd, func(hWndChild windows.HWND) bool {
 			if checkClassName(hWndChild) {
 				handle = hWndChild
 				return false
@@ -269,40 +283,46 @@ func (p *TProcess) GetWindowHandle(className string) (uintptr, error) {
 		return handle == 0
 	})
 	if handle == 0 {
-		return 0, fmt.Errorf("could not find window with class '%s'", className)
+		return 0, ErrWinNotFound
 	}
 	return handle, nil
 }
 
-func (p *TProcess) ReadMemory(address uintptr, size int) ([]byte, bool) {
-	if size < 0 || address == 0 {
-		return nil, false
+func (p *TProcess) ReadMemory(address uintptr, size int) ([]byte, error) {
+	if size <= 0 || address == 0 {
+		return nil, ErrInvalidMemoryAccess
 	}
 	buffer := make([]byte, size)
-	ok := interop.ReadProcessMemory(p.h, address, buffer)
-	return buffer, ok
+	var bytesRead uintptr
+	err := windows.ReadProcessMemory(p.h, address, &buffer[0], uintptr(size), &bytesRead)
+
+	if err != nil || int(bytesRead) != size {
+		return nil, ErrMemoryRead
+	}
+
+	return buffer, nil
 }
 
-func (p *TProcess) ReadAddress(address uintptr) (uintptr, bool) {
-	data, ok := p.ReadMemory(address, int(pointersize))
-	if !ok {
-		return 0, false
+func (p *TProcess) ReadAddress(address uintptr) (uintptr, error) {
+	data, err := p.ReadMemory(address, int(pointersize))
+	if err != nil {
+		return 0, err
 	}
 	if len(data) == 8 {
-		return uintptr(binary.LittleEndian.Uint64(data)), true
+		return uintptr(binary.LittleEndian.Uint64(data)), nil
 	} else {
-		return uintptr(binary.LittleEndian.Uint32(data)), true
+		return uintptr(binary.LittleEndian.Uint32(data)), nil
 	}
 }
 
 func (p *TProcess) LearnVMT(obj uintptr) error {
-	class, ok := p.ReadAddress(obj)
-	if !ok || class == 0 {
-		return errors.New("faild learning vmt layout")
+	class, err := p.ReadAddress(obj)
+	if err != nil || class == 0 {
+		return ErrVMTRead
 	}
 	for i := uintptr(10); i <= 40; i++ {
 		offset := i * pointersize
-		if self, ok := p.ReadAddress(class - offset); !ok || self != class {
+		if self, err := p.ReadAddress(class - offset); err != nil || self != class {
 			continue
 		}
 		p.vmtSelfCheck = offset
@@ -311,19 +331,19 @@ func (p *TProcess) LearnVMT(obj uintptr) error {
 		p.vmtParentClass = offset - 10*pointersize
 		return nil
 	}
-	return errors.New("faild learning vmt layout")
+	return ErrVMTRead
 }
 
 func (p *TProcess) EnumObjFields(obj uintptr, cb func(name string, address uintptr) bool) {
 	sptr := int(pointersize)
-	for class, ok := p.ReadAddress(obj); ok && class != 0; class = p.GetClassParent(class) {
-		fieldTableAddress, ok := p.ReadAddress(class - p.vmtFieldTable)
-		if fieldTableAddress == 0 || !ok {
+	for class, err := p.ReadAddress(obj); err == nil && class != 0; class = p.GetClassParent(class) {
+		fieldTableAddress, err := p.ReadAddress(class - p.vmtFieldTable)
+		if fieldTableAddress == 0 || err != nil {
 			continue
 		}
 
-		fieldTable, ok := p.ReadMemory(fieldTableAddress, 4096)
-		if !ok {
+		fieldTable, err := p.ReadMemory(fieldTableAddress, 4096)
+		if err != nil {
 			continue
 		}
 
@@ -372,43 +392,43 @@ func (p *TProcess) FindObjFieldByName(obj uintptr, name string) (uintptr, bool) 
 
 func (p *TProcess) GetObjFieldByName(obj uintptr, name string) (uintptr, error) {
 	if obj == 0 {
-		return 0, errors.New("invalid object provided")
+		return 0, ErrInvalidObj
 	}
 
 	field, ok := p.FindObjFieldByName(obj, name)
 	if !ok {
-		return 0, fmt.Errorf("could not find filed with name %s", name)
+		return 0, ErrFieldNotFound
 	}
-	address, ok := p.ReadAddress(obj + field)
-	if !ok {
-		return 0, fmt.Errorf("could not read field with name %s", name)
+	address, err := p.ReadAddress(obj + field)
+	if err != nil {
+		return 0, err
 	}
 	return address, nil
 }
 
 func (p *TProcess) GetObjFieldByType(obj uintptr, className string) (uintptr, error) {
 	if obj == 0 {
-		return 0, errors.New("invalid object provided")
+		return 0, ErrInvalidObj
 	}
 
 	var field uintptr
 	p.EnumObjFields(obj, func(fname string, address uintptr) bool {
-		v, ok := p.ReadAddress(obj + address)
-		if !ok || !p.IsObject(v) {
+		v, err := p.ReadAddress(obj + address)
+		if err != nil || !p.IsObject(v) {
 			return true
 		}
 
-		for class, ok := p.ReadAddress(v); class != 0 && ok; class = p.GetClassParent(class) {
-			nameAddress, ok := p.ReadAddress(class - p.vmtClassName)
-			if !ok {
+		for class, err := p.ReadAddress(v); class != 0 && err == nil; class = p.GetClassParent(class) {
+			nameAddress, err := p.ReadAddress(class - p.vmtClassName)
+			if err != nil {
 				continue
 			}
-			nameLength, ok := p.ReadMemory(nameAddress, 1)
-			if !ok {
+			nameLength, err := p.ReadMemory(nameAddress, 1)
+			if err != nil {
 				continue
 			}
-			nameBytes, ok := p.ReadMemory(nameAddress+1, int(nameLength[0]))
-			if !ok {
+			nameBytes, err := p.ReadMemory(nameAddress+1, int(nameLength[0]))
+			if err != nil {
 				continue
 			}
 
@@ -420,28 +440,28 @@ func (p *TProcess) GetObjFieldByType(obj uintptr, className string) (uintptr, er
 		return true
 	})
 	if field == 0 {
-		return 0, fmt.Errorf("could not find field of type %s", className)
+		return 0, ErrFieldNotFound
 	}
 	return field, nil
 }
 
 func (p *TProcess) IsClass(class uintptr) bool {
-	self, ok := p.ReadAddress(class - p.vmtSelfCheck)
-	return ok && self == class
+	self, err := p.ReadAddress(class - p.vmtSelfCheck)
+	return err == nil && self == class
 }
 
 func (p *TProcess) IsObject(obj uintptr) bool {
-	class, ok := p.ReadAddress(obj)
-	return ok && p.IsClass(class)
+	class, err := p.ReadAddress(obj)
+	return err == nil && p.IsClass(class)
 }
 
 func (p *TProcess) GetClassParent(class uintptr) uintptr {
-	parentAddress, ok := p.ReadAddress(class - p.vmtParentClass)
-	if !ok || parentAddress == 0 {
+	parentAddress, err := p.ReadAddress(class - p.vmtParentClass)
+	if err != nil || parentAddress == 0 {
 		return 0
 	}
-	parent, ok := p.ReadAddress(parentAddress)
-	if !ok || parent == 0 {
+	parent, err := p.ReadAddress(parentAddress)
+	if err != nil || parent == 0 {
 		return 0
 	}
 
@@ -452,29 +472,100 @@ func (p *TProcess) GetClassParent(class uintptr) uintptr {
 	return parent
 }
 
-func getWindowObject(window uintptr) (uintptr, error) {
+func getWindowObject(window windows.HWND) (uintptr, error) {
 	var objPtr uintptr
-
-	interop.EnumPropsExW(window, func(_, key, val uintptr) bool {
-		if key > 0xFFFF && strings.HasPrefix(utf16PtrToString(key), "ControlOfs") {
+	EnumPropsExW(window, func(_, key, val uintptr) bool {
+		if key > 0xFFFF && strings.HasPrefix(utf16PtrToString(key, 12), "ControlOfs") {
 			objPtr = val
 			return false
 		}
 		return true
 	})
 	if objPtr == 0 {
-		return 0, errors.New("could not get window object")
+		return 0, ErrWinNotFound
 	}
 	return objPtr, nil
 }
 
-func utf16PtrToString(p uintptr) string {
+func utf16PtrToString(p uintptr, max int) string {
 	var s []uint16
-	for ; ; p += 2 {
-		c := *(*uint16)(unsafe.Pointer(p))
+	for i := 0; i < max; i++ {
+		c := *(*uint16)(unsafe.Pointer(p + uintptr(i)*2))
 		if c == 0 {
-			return string(utf16.Decode(s))
+			break
 		}
 		s = append(s, c)
 	}
+	return string(utf16.Decode(s))
+}
+
+// ******************************** //
+// *           callbacks          * //
+// ******************************** //
+
+var (
+	user32            = syscall.NewLazyDLL("user32.dll")
+	pEnumWindows      = user32.NewProc("EnumWindows")
+	pEnumChildWindows = user32.NewProc("EnumChildWindows")
+	pEnumPropsExW     = user32.NewProc("EnumPropsExW")
+
+	pEnumWindowsProc = syscall.NewCallback(func(hWnd uintptr, lParam uintptr) uintptr {
+		return boolToPtr(lookupCallback[func(hWnd windows.HWND) bool](lParam)(windows.HWND(hWnd)))
+	})
+	pPropEnumProcEx = syscall.NewCallback(func(p1, p2, p3, lParam uintptr) uintptr {
+		return boolToPtr(lookupCallback[func(p1, p2, p3 uintptr) bool](lParam)(p1, p2, p3))
+	})
+)
+
+func EnumWindows(cb func(hWnd windows.HWND) bool) {
+	cbId := enqueueCallback(cb)
+	defer unqueueCallback(cbId)
+	pEnumWindows.Call(pEnumWindowsProc, cbId)
+}
+
+func EnumChildWindows(hWnd windows.HWND, cb func(hWnd windows.HWND) bool) {
+	cbId := enqueueCallback(cb)
+	defer unqueueCallback(cbId)
+	pEnumChildWindows.Call(uintptr(hWnd), pEnumWindowsProc, cbId)
+}
+
+func EnumPropsExW(hWnd windows.HWND, cb func(p1, p2, p3 uintptr) bool) {
+	cbId := enqueueCallback(cb)
+	defer unqueueCallback(cbId)
+	pEnumPropsExW.Call(uintptr(hWnd), pPropEnumProcEx, cbId)
+}
+
+var (
+	cbMu   sync.Mutex
+	cbNext uintptr
+	cbFns  = map[uintptr]any{}
+)
+
+func enqueueCallback[T any](cb T) uintptr {
+	cbMu.Lock()
+	defer cbMu.Unlock()
+
+	cbNext++
+	id := cbNext
+	cbFns[id] = cb
+	return id
+}
+
+func lookupCallback[T any](id uintptr) T {
+	cbMu.Lock()
+	defer cbMu.Unlock()
+	return cbFns[id].(T)
+}
+
+func unqueueCallback(id uintptr) {
+	cbMu.Lock()
+	defer cbMu.Unlock()
+	delete(cbFns, id)
+}
+
+func boolToPtr(b bool) uintptr {
+	if b {
+		return 1
+	}
+	return 0
 }
