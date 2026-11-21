@@ -31,7 +31,7 @@ const config = useConfigStore();
                                 'menu-active': sb.playlist.itemindex === i,
                                 'text-contrast-outline font-bold text-(--item-color)': config.layout.playlistColorMode === 'text'
                             }"
-                            class="relative overflow-hidden"
+                            class="relative overflow-hidden wrap-anywhere"
                             @click="sb.setPlaylistItemindex(i)"
                             v-else
                         >
