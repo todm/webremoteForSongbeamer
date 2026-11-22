@@ -1,7 +1,7 @@
+import { textDecodeAuto } from "../utils";
 
 export async function getSongbeamerThumbnails(count: number, quality: number = 50) {
-    return [...Array(count).keys()].map(i => `/thumbnails/${i}?q=${quality}&cachebuster=${Math.random().toString(16).substring(2)}`
-    )
+    return [...Array(count).keys()].map(i => `/thumbnails/${i}?q=${quality}&cachebuster=${Math.random().toString(16).substring(2)}`)
 }
 
 const VERSE_MARKERS = [
@@ -49,13 +49,10 @@ const VERSE_MARKERS = [
     'Copyright'
 ] as const;
 
-export async function getSngThumbnails(allLanguages?: boolean, encoding?: string) {
+export async function getSngThumbnails(allLanguages?: boolean) {
     const res = await fetch('/sbfiles/presentation', { cache: 'no-store' });
     const data = await res.arrayBuffer();
-
-    encoding = new TextDecoder('utf-8').decode(data).match(/#ENCODING=(.+)/i)?.[1] ?? encoding;
-
-    const content = new TextDecoder(encoding || 'utf-8').decode(data);
+    const content = textDecodeAuto(data)
 
     const metadata = new Map<string, string>();
     const lines = content.split(/\r\n|\r|\n/g).map(e => e.trim());

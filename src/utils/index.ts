@@ -100,5 +100,19 @@ export async function cropImage(img: HTMLImageElement, x: number, y: number, w: 
     return loadImage(url);
 }
 
+export function textDecodeAuto(data: ArrayBuffer, fallback = 'windows-1252') {
+    const bytes = new Uint8Array(data);
+
+    if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return new TextDecoder('utf-8').decode(bytes);
+    if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder('utf-16le').decode(bytes);
+    if (bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder('utf-16be').decode(bytes);
+
+    try {
+        return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+        return new TextDecoder(fallback).decode(bytes);
+    }
+}
+
 
 export { default as EventEmitter } from './EventEmitter';

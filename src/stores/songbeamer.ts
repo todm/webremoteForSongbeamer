@@ -85,7 +85,7 @@ export const useSongbeamerStore = defineStore('songbeamer', () => {
         const ext = state.presentation.filename.split('.').pop()?.toLowerCase() || '';
         const cacheKey = _getCurrentCacheKey();
         if (ext === 'sng' && config.presentation.localSngRendering) {
-            const pages = cache.get(cacheKey) || (await getSngThumbnails(state.presentation.languages === '', config.presentation.sngEncoding || 'utf-8'));
+            const pages = cache.get(cacheKey) || (await getSngThumbnails(state.presentation.languages === ''));
             pages.forEach((e, i) => {
                 if (state.presentation.pages[i + 1])
                     state.presentation.pages[i + 1]._sng = e
@@ -94,7 +94,7 @@ export const useSongbeamerStore = defineStore('songbeamer', () => {
         } else {
             const pages = cache.get(cacheKey) || (await getSongbeamerThumbnails(state.presentation.pagecount, config.presentation.thumbnailQuality));
             pages.forEach((e, i) => {
-                if (state.presentation.pages[i + 1]._img)
+                if (state.presentation.pages[i + 1])
                     state.presentation.pages[i + 1]._img = e
             });
             cache.set(cacheKey, pages);

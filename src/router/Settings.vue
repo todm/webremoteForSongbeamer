@@ -4,7 +4,6 @@ import { PlusIcon, MinusIcon } from '@lucide/vue';
 import { clamp } from '../utils';
 import { useSongbeamerStore } from '../stores/songbeamer';
 import { watch } from 'vue';
-import { SUPPORTED_ENCODINGS } from '../utils/constants';
 
 const config = useConfigStore();
 const sb = useSongbeamerStore();
@@ -97,12 +96,6 @@ function reset() {
 
             <label class="label"> Render SNG as text </label>
             <input type="checkbox" v-model="config.presentation.localSngRendering" class="toggle" />
-
-            <label class="label" v-if="config.presentation.localSngRendering">SNG Encoding</label>
-            <select class="select select-sm w-32" v-model="config.presentation.sngEncoding"
-                v-if="config.presentation.localSngRendering">
-                <option v-for="enc in SUPPORTED_ENCODINGS">{{ enc }}</option>
-            </select>
         </fieldset>
 
         <fieldset class="fieldset border-base-300 rounded-box fieldset-grid-cols grid gap-4 border p-4">

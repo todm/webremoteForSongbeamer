@@ -8,7 +8,6 @@ export const useConfigStore = defineStore('config', () => {
         presentation: {
             gridSize: 3,
             localSngRendering: false,
-            sngEncoding: 'utf-8',
             thumbnailQuality: 50
         },
         layout: {
