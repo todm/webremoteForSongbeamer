@@ -1,9 +1,7 @@
 
 export async function getSongbeamerThumbnails(count: number, quality: number = 50) {
-    return [...Array(count).keys()].map(i => {
-        if(i === 0) return '';
-        return `/thumbnails/${i-1}?q=${quality}&cachebuster=${Math.random().toString(16).substring(2)}`
-    })
+    return [...Array(count).keys()].map(i => `/thumbnails/${i}?q=${quality}&cachebuster=${Math.random().toString(16).substring(2)}`
+    )
 }
 
 const VERSE_MARKERS = [

@@ -75,7 +75,7 @@ export const useSongbeamerStore = defineStore('songbeamer', () => {
     }
 
     async function _syncPages() {
-        state.presentation.pages = Array(state.presentation.pagecount+1)
+        state.presentation.pages = Array(state.presentation.pagecount + 1)
             .fill(0)
             .map(_ => ({
                 caption: ''
@@ -86,11 +86,17 @@ export const useSongbeamerStore = defineStore('songbeamer', () => {
         const cacheKey = _getCurrentCacheKey();
         if (ext === 'sng' && config.presentation.localSngRendering) {
             const pages = cache.get(cacheKey) || (await getSngThumbnails(state.presentation.languages === '', config.presentation.sngEncoding || 'utf-8'));
-            pages.forEach((e, i) => (state.presentation.pages[i]._sng = e));
+            pages.forEach((e, i) => {
+                if (state.presentation.pages[i + 1])
+                    state.presentation.pages[i + 1]._sng = e
+            });
             cache.set(cacheKey, pages);
         } else {
-            const pages = cache.get(cacheKey) || (await getSongbeamerThumbnails(state.presentation.pages.length, config.presentation.thumbnailQuality));
-            pages.forEach((e, i) => (state.presentation.pages[i]._img = e));
+            const pages = cache.get(cacheKey) || (await getSongbeamerThumbnails(state.presentation.pagecount, config.presentation.thumbnailQuality));
+            pages.forEach((e, i) => {
+                if (state.presentation.pages[i + 1]._img)
+                    state.presentation.pages[i + 1]._img = e
+            });
             cache.set(cacheKey, pages);
         }
     }
