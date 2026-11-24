@@ -19,9 +19,6 @@ export default defineConfig(({ mode }) => {
                 },
                 '/sbfiles': {
                     target: `http://${WR_SERVER}/`
-                },
-                '/thumbnails': {
-                    target: `http://${WR_SERVER}/`
                 }
             }
         }

@@ -1,7 +1,7 @@
 import { textDecodeAuto } from "../utils";
 
 export async function getSongbeamerThumbnails(count: number, quality: number = 50) {
-    return [...Array(count).keys()].map(i => `/thumbnails/${i}?q=${quality}&cachebuster=${Math.random().toString(16).substring(2)}`)
+    return [...Array(count).keys()].map(i => `/sbfiles/thumbnails/${i}?q=${quality}&cachebuster=${Math.random().toString(16).substring(2)}`)
 }
 
 const VERSE_MARKERS = [

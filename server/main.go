@@ -37,7 +37,7 @@ func main() {
 	router := http.NewServeMux()
 
 	router.HandleFunc("/osc", handleWebsocket)
-	router.HandleFunc("/thumbnails/{index}", handleThumbnails)
+	router.HandleFunc("/sbfiles/thumbnails/{index}", handleThumbnails)
 	router.HandleFunc("/sbfiles/playlist", handleOSCFile("/playlist/filename"))
 	router.HandleFunc("/sbfiles/presentation", handleOSCFile("/presentation/filename"))
 	router.HandleFunc("/sbfiles/video", handleOSCFile("/video/filename"))
