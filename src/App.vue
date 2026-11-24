@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { onMounted, provide, watch } from 'vue';
+import { onMounted, watch } from 'vue';
 import { useWakeLock } from './utils/composables';
 import { useConfigStore } from './stores/config';
 import { getNewVersion } from './utils';

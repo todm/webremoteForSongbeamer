@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -224,6 +225,6 @@ func GetIpAddresses() ([]string, error) {
 }
 
 func exit() {
-	fmt.Println("Press Enter to exit...")
-	fmt.Scanf("%s")
+	fmt.Println("Press return to exit...")
+	bufio.NewReader(os.Stdin).ReadString('\n')
 }
