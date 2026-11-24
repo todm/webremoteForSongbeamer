@@ -28,3 +28,6 @@ dist-ssr
 
 .pnpm-store
 public/pdf.worker.*js
+
+*.config.json
+*.exe
