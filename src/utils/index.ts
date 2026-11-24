@@ -1,3 +1,5 @@
+import packageJson from '../../package.json';
+
 /**
  * Resolves after the specified number of milliseconds
  * @param ms
@@ -112,6 +114,34 @@ export function textDecodeAuto(data: ArrayBuffer, fallback = 'windows-1252') {
     } catch {
         return new TextDecoder(fallback).decode(bytes);
     }
+}
+
+export async function getNewVersion(ignored?: string) {
+    const { tag_name } = await fetch('https://api.github.com/repos/todm/webremoteforsongbeamer/releases/latest').then((res) => res.json()).catch(() => ({}));
+
+    let compVersion = packageJson.version;
+
+    if (ignored && semverIsNewer(ignored, compVersion)) compVersion = ignored
+
+    if (!compVersion || !tag_name) {
+        return;
+    }
+
+    if (semverIsNewer(tag_name, compVersion)) return tag_name;
+}
+
+function semverIsNewer(a: string, b: string) {
+    const pa = a.match(/(\d+)\.(\d+)\.(\d+)/);
+    const pb = b.match(/(\d+)\.(\d+)\.(\d+)/);
+    if (!pa || !pb) return false;
+    for (let i = 1; i < Math.max(pa.length, pb.length); i++) {
+        if (parseInt(pa[i]) > parseInt(pb[i])) {
+            return true
+        } else if (parseInt(pa[i]) < parseInt(pb[i])) {
+            break;
+        }
+    }
+    return false
 }
 
 

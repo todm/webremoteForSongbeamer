@@ -32,7 +32,9 @@ export const useConfigStore = defineStore('config', () => {
         },
         general: {
             theme: 'default',
-            wakeLock: false
+            wakeLock: false,
+            ignoredVersion: '0.0.0',
+            newVersion: undefined as string | undefined
         }
     });
 

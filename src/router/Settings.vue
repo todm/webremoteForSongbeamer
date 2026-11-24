@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useConfigStore } from '../stores/config';
-import { PlusIcon, MinusIcon } from '@lucide/vue';
+import { PlusIcon, MinusIcon, CircleArrowUpIcon } from '@lucide/vue';
 import { clamp } from '../utils';
 import { useSongbeamerStore } from '../stores/songbeamer';
 import { watch } from 'vue';
@@ -22,9 +22,21 @@ function reset() {
     config.reset();
     location.reload();
 }
+
+function ignoreVersion() {
+    config.general.ignoredVersion = config.general.newVersion || "0.0.0";
+    config.general.newVersion = undefined;
+}
 </script>
 
 <template>
+    <div class="alert lg:my-4 lg:w-4xl mx-auto" v-if="!!config.general.newVersion">
+        <CircleArrowUpIcon class="h-4 w-4" />
+        A new version is available {{ config.general.newVersion }}
+        <a href="https://github.com/todm/webremoteForSongbeamer/releases/latest" target="_blank"
+            class="link">Download</a> |
+        <a href="#" class="link" @click="ignoreVersion">Ignore</a>
+    </div>
     <div class="border-base-300 bg-base-200 mx-auto rounded-md border px-4 py-4 shadow-md lg:my-4 lg:w-4xl">
         <h1 class="font-heading">Settings</h1>
 

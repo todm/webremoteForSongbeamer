@@ -1,7 +1,8 @@
 <script lang="ts" setup>
-import { watch } from 'vue';
+import { onMounted, provide, watch } from 'vue';
 import { useWakeLock } from './utils/composables';
 import { useConfigStore } from './stores/config';
+import { getNewVersion } from './utils';
 
 const config = useConfigStore();
 
@@ -21,6 +22,12 @@ watch(
 
 const wakeLock = useWakeLock(config.general.wakeLock);
 watch(() => config.general.wakeLock, wakeLock.set);
+
+onMounted(async () => {
+    const newVersion = await getNewVersion(config.general.ignoredVersion);
+    config.general.newVersion = newVersion
+
+})
 </script>
 
 <template>
