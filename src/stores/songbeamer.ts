@@ -47,8 +47,8 @@ export const useSongbeamerStore = defineStore('songbeamer', () => {
 
     const osc = new XOscClient(url.toString());
     osc.on('message', _onMessage);
+    osc.on('open', () => osc.sync(state, true));
     osc.connect();
-    osc.sync(state, true);
 
     const config = useConfigStore();
     const cache = new Map<string, any[]>();
