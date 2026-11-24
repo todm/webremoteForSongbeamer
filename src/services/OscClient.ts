@@ -98,9 +98,15 @@ export class XOscClient extends OscClient {
 
     private subscribe() {
         this.send('/xremote');
+        clearInterval(this.heartbeatInterval);
         this.heartbeatInterval = setInterval(() => {
             this.send('/xremote');
         }, 8000);
+    }
+
+    public disconnect(): this {
+        clearInterval(this.heartbeatInterval);
+        return super.disconnect();
     }
 
     private unsubscribe() {
