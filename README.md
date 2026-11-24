@@ -6,7 +6,7 @@
 </div>
 <br>
 
-"Webremote for Songbeamer" is an unofficial app that allows you to control [Songbeamer](https://www.songbeamer.de/) from a separate device over the network. It runs on Tablets, Phones, PCs and any device with a modern web browser. This way you can control Songbeamer from anywhere without having to be in front of the computer that runs it.
+"Webremote for Songbeamer" is an unofficial webapp that allows you to control [Songbeamer](https://www.songbeamer.de/) from a separate device over the network. It runs on Tablets, Phones, PCs and any device with a modern web browser. This way you can control Songbeamer from anywhere without having to be in front of the computer that runs it.
 
 <div align="center">
     <img src="./public/img/screenshots/desktop-1280x720.webp" width="600" />
@@ -17,7 +17,7 @@
 Webremote for Songbeamer requires a separate program that runs beside Songbeamer and acts as a bridge for the OSC interface. To setup the webremote, follow these steps:
 
 1. Install Songbeamer on your computer if you haven't done so already. You can get it from [here](https://www.songbeamer.de/).
-2. Open Songbeamer and enable OSC support.
+2. Activate OSC support in Songbeamer.
     1. Open songbeamer and navigate to `Extras` > `Midi / OSC Setup...`
     2. Switch to the OSC tab and check the box to enable OSC support
     3. Have a look at the specified port. Use port 10023 or reconfigure the webremote to your desired port later.
@@ -29,7 +29,7 @@ Webremote for Songbeamer requires a separate program that runs beside Songbeamer
     - The program will print out all available ip addresses of the device it runs on.
     - If you want to open it on the same device you can use its local ip address: http://localhost:10024 or http://127.0.0.1:10024
     - If you want to open it on another device in the same network you have to use its external ip address. It should look something like this: http://192.168.1.xx:10024
-    - If you run into trouble, make sure that your firewall allows incoming connections on the port you specified (default: 10024)
+    - If you run into issues, make sure that your firewall allows incoming connections on the port you specified (default: 10024)
 
 > [!CAUTION]
 > There is no further authentication required to access the webremote. To prevent unauthorized access, make sure to only run the server on a trusted network.
@@ -37,7 +37,8 @@ Webremote for Songbeamer requires a separate program that runs beside Songbeamer
 ## Compatibility
 
 Webremote for Songbeamer was primarily developed for Windows.
-It should run on macOS as well but since thumbnail capturing currently uses windows internal APIs it's restricted to pdf and text previews. It's also untested.
+
+Since thumbnail capturing currently uses windows internal APIs a mac version would be restricted to text previews. I also don't have a mac to test on.
 
 You need a Songbeamer version that supports OSC. For development version 6.16 was used, but any recent version should work.
 

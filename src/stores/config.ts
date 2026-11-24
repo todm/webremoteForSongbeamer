@@ -7,11 +7,8 @@ export const useConfigStore = defineStore('config', () => {
     const state = reactive({
         presentation: {
             gridSize: 3,
-            localPdfRendering: true,
-            localSngRendering: true,
-            sngEncoding: 'utf-8',
-            gridCaptureEnabled: false,
-            gridCaptureCols: 3
+            localSngRendering: false,
+            thumbnailQuality: 50
         },
         layout: {
             showNavigation: true,
@@ -35,7 +32,9 @@ export const useConfigStore = defineStore('config', () => {
         },
         general: {
             theme: 'default',
-            wakeLock: false
+            wakeLock: false,
+            ignoredVersion: '0.0.0',
+            newVersion: undefined as string | undefined
         }
     });
 

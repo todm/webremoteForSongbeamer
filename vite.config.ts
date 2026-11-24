@@ -1,8 +1,6 @@
 import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import tailwindcss from '@tailwindcss/vite';
-import { fileURLToPath } from 'node:url';
-import { cp } from 'node:fs/promises';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, process.cwd(), '');
@@ -21,13 +19,8 @@ export default defineConfig(({ mode }) => {
                 },
                 '/sbfiles': {
                     target: `http://${WR_SERVER}/`
-                },
-                '/thumbnails': {
-                    target: `http://${WR_SERVER}/`
                 }
             }
         }
     };
 });
-
-await cp(fileURLToPath(import.meta.resolve('pdfjs-dist/build/pdf.worker.min.mjs')), './public/pdf.worker.min.js');

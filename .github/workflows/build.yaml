@@ -41,12 +41,12 @@ jobs:
                     - os: windows
                       arch: '386'
                       ext: .exe
-                    - os: darwin
-                      arch: amd64
-                      ext: ''
-                    - os: darwin
-                      arch: arm64
-                      ext: ''
+                    # - os: darwin
+                    #   arch: amd64
+                    #   ext: ''
+                    # - os: darwin
+                    #   arch: arm64
+                    #   ext: ''
         steps:
             - name: Check out repository
               uses: actions/checkout@v7

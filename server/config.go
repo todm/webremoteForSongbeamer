@@ -8,14 +8,12 @@ import (
 )
 
 type Config struct {
-	Port               int
-	SongbeamerAddr     string
-	UseTLS             bool
-	CertFile           string
-	KeyFile            string
-	ThumbnailQuality   int
-	ThumbnailSkipReset bool
-	StaticDir          string
+	Port           int
+	SongbeamerAddr string
+	UseTLS         bool
+	CertFile       string
+	KeyFile        string
+	StaticDir      string
 }
 
 var cfg *Config = nil
@@ -26,14 +24,12 @@ func ReadConfig() error {
 	}
 
 	cfg = &Config{
-		Port:               10024,
-		SongbeamerAddr:     "127.0.0.1:10023",
-		UseTLS:             false,
-		CertFile:           "",
-		KeyFile:            "",
-		ThumbnailQuality:   50,
-		ThumbnailSkipReset: false,
-		StaticDir:          "./static",
+		Port:           10024,
+		SongbeamerAddr: "127.0.0.1:10023",
+		UseTLS:         false,
+		CertFile:       "",
+		KeyFile:        "",
+		StaticDir:      "./static",
 	}
 
 	path := ResolvePath("webremote.config.json")

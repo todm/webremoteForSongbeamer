@@ -21,14 +21,15 @@ const config = useConfigStore();
         <div class="grid gap-2" :style="{ 'grid-template-columns': `repeat(${config.presentation.gridSize}, 1fr)` }">
             <div
                 v-for="(page, i) in sb.presentation.pages"
+                v-show="i != 0"
                 class="bg-base-200 cursor-pointer overflow-hidden rounded-md shadow-md outline-offset-1 select-none"
                 :class="{
-                    'outline-accent outline-3': sb.presentation.page === i + 1 && sb.presentation.state === PresentationState.Page,
-                    'outline-accent/50 outline-3 outline-dashed': sb.presentation.page === i + 1 && sb.presentation.state !== PresentationState.Page
+                    'outline-accent outline-3': sb.presentation.page === i && sb.presentation.state === PresentationState.Page,
+                    'outline-accent/50 outline-3 outline-dashed': sb.presentation.page === i && sb.presentation.state !== PresentationState.Page
                 }"
-                @click="sb.setPresentationPage(i + 1, true)"
+                @click="sb.setPresentationPage(i, true)"
             >
-                <PageContent :page="page" :index="i + 1" aspect-ratio="fixed" />
+                <PageContent :page="page" :index="i" aspect-ratio="fixed" />
             </div>
         </div>
         <div class="join mt-5 flex justify-center" v-if="config.layout.showPlaylistCtrl">

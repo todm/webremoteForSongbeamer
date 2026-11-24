@@ -17,21 +17,25 @@ export default class OscClient extends EventEmitter<{ open: []; error: []; close
 
     public connect() {
         this.ws?.close();
-        this.ws = new WebSocket(this.url);
+        const ws = new WebSocket(this.url);
+        this.ws = ws;
+
+        ws.binaryType = 'arraybuffer';
         this.isOpen = true;
-        this.ws.addEventListener('open', () => this.emit('open'));
-        this.ws.addEventListener('error', () => this.emit('error'));
-        this.ws.addEventListener('close', this.onClose.bind(this));
-        this.ws.addEventListener('message', this.onMessage.bind(this));
+        ws.addEventListener('open', () => ws === this.ws && this.emit('open'));
+        ws.addEventListener('error', () => ws === this.ws && this.emit('error'));
+        ws.addEventListener('close', () => ws === this.ws && this.onClose());
+        ws.addEventListener('message', e => ws === this.ws && this.onMessage(e));
         return this;
     }
 
     public disconnect() {
         this.isOpen = false;
         this.ws?.close();
-        this.removeAllListeners();
         clearTimeout(this.reconnectionTimeout);
         this.ws = undefined;
+        this.emit('close');
+        this.removeAllListeners();
         return this;
     }
 
@@ -40,24 +44,20 @@ export default class OscClient extends EventEmitter<{ open: []; error: []; close
     }
 
     private onClose() {
+        this.emit('close');
         if (this.isOpen) this.reconnectionTimeout = setTimeout(() => this.connect(), 1000);
-        else this.emit('close');
     }
 
-    private async onMessage(e: MessageEvent) {
-        const data: ArrayBuffer = await e.data.arrayBuffer();
+    private onMessage(e: MessageEvent<ArrayBuffer>) {
         const message = new OSCMessage('');
-        message.unpack(data);
+        message.unpack(e.data);
         this.enableLog && console.log('🟡 OSC', message.getAddress(), ...message.getValues());
         this.emit('message', message.getAddress(), message.getValues());
     }
 
     public async send(address: string, ...args: any[]) {
         if (!this.isOpen) return this;
-        if (this.ws?.readyState !== WebSocket.OPEN) {
-            setTimeout(() => this.send(address, ...args), 100);
-            return this;
-        }
+        if (this.ws?.readyState !== WebSocket.OPEN) return this;
         const message = new OSCMessage(address, ...args);
         const data = message.pack();
         this.ws?.send(data);
@@ -80,8 +80,8 @@ export default class OscClient extends EventEmitter<{ open: []; error: []; close
                 clearTimeout(timeout);
             });
 
+            c.on('open', () => c.send(address, ...args))
             c.connect();
-            c.send(address, ...args);
         });
     }
 }
@@ -98,9 +98,15 @@ export class XOscClient extends OscClient {
 
     private subscribe() {
         this.send('/xremote');
+        clearInterval(this.heartbeatInterval);
         this.heartbeatInterval = setInterval(() => {
             this.send('/xremote');
         }, 8000);
+    }
+
+    public disconnect(): this {
+        clearInterval(this.heartbeatInterval);
+        return super.disconnect();
     }
 
     private unsubscribe() {

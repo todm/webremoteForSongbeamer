@@ -3,7 +3,7 @@ import { reactive, toRefs } from 'vue';
 import { XOscClient } from '../services/OscClient';
 import { setValueAtPath } from '../utils';
 import { wait } from '../utils';
-import { getPDFThumbnails, getSngThumbnails, getSongbeamerThumbnails } from '../services/Thumbnails';
+import { getSngThumbnails, getSongbeamerThumbnails } from '../services/Thumbnails';
 import { useConfigStore } from './config';
 
 export const useSongbeamerStore = defineStore('songbeamer', () => {
@@ -47,8 +47,8 @@ export const useSongbeamerStore = defineStore('songbeamer', () => {
 
     const osc = new XOscClient(url.toString());
     osc.on('message', _onMessage);
+    osc.on('open', () => osc.sync(state, true));
     osc.connect();
-    osc.sync(state, true);
 
     const config = useConfigStore();
     const cache = new Map<string, any[]>();
@@ -75,25 +75,28 @@ export const useSongbeamerStore = defineStore('songbeamer', () => {
     }
 
     async function _syncPages() {
-        state.presentation.pages = Array(state.presentation.pagecount)
+        state.presentation.pages = Array(state.presentation.pagecount + 1)
             .fill(0)
-            .map(_ => ({}));
+            .map(_ => ({
+                caption: ''
+            }));
+        osc.sync(state, true, "/presentation/pages")
 
         const ext = state.presentation.filename.split('.').pop()?.toLowerCase() || '';
         const cacheKey = _getCurrentCacheKey();
-        if (ext === 'pdf' && config.presentation.localPdfRendering) {
-            const pages = cache.get(cacheKey) || (await getPDFThumbnails(1));
-            pages.forEach((e, i) => (state.presentation.pages[i]._img = e));
-            cache.set(cacheKey, pages);
-        } else if (ext === 'sng' && config.presentation.localSngRendering) {
-            const pages = cache.get(cacheKey) || (await getSngThumbnails(state.presentation.languages === '', config.presentation.sngEncoding || 'utf-8'));
-            pages.forEach((e, i) => (state.presentation.pages[i]._sng = e));
+        if (ext === 'sng' && config.presentation.localSngRendering) {
+            const pages = cache.get(cacheKey) || (await getSngThumbnails(state.presentation.languages === ''));
+            pages.forEach((e, i) => {
+                if (state.presentation.pages[i + 1])
+                    state.presentation.pages[i + 1]._sng = e
+            });
             cache.set(cacheKey, pages);
         } else {
-            const pages =
-                cache.get(cacheKey) ||
-                (await getSongbeamerThumbnails(state.presentation.pagecount, config.presentation.gridCaptureEnabled ? config.presentation.gridCaptureCols : undefined));
-            pages.forEach((e, i) => (state.presentation.pages[i]._img = e));
+            const pages = cache.get(cacheKey) || (await getSongbeamerThumbnails(state.presentation.pagecount, config.presentation.thumbnailQuality));
+            pages.forEach((e, i) => {
+                if (state.presentation.pages[i + 1])
+                    state.presentation.pages[i + 1]._img = e
+            });
             cache.set(cacheKey, pages);
         }
     }
