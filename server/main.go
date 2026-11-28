@@ -38,6 +38,7 @@ func main() {
 
 	router.HandleFunc("/osc", handleWebsocket)
 	router.HandleFunc("/sbfiles/thumbnails/{index}", handleThumbnails)
+	router.HandleFunc("/sbfiles/preview", handlePreview)
 	router.HandleFunc("/sbfiles/playlist", handleOSCFile("/playlist/filename"))
 	router.HandleFunc("/sbfiles/presentation", handleOSCFile("/presentation/filename"))
 	router.HandleFunc("/sbfiles/video", handleOSCFile("/video/filename"))
@@ -184,6 +185,35 @@ func handleThumbnails(w http.ResponseWriter, r *http.Request) {
 	var buf bytes.Buffer
 	err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: q})
 
+	if err != nil {
+		http.Error(w, "failed to encode image", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+	_, err = buf.WriteTo(w)
+	if err != nil {
+		http.Error(w, "failed sending image", http.StatusInternalServerError)
+	}
+}
+
+func handlePreview(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "no-store")
+
+	q, err := strconv.Atoi(r.URL.Query().Get("q"))
+	if err != nil || q < 0 || q > 100 {
+		q = 50
+	}
+
+	img, err := GetPreview()
+	if err != nil {
+		http.Error(w, "failed getting preview", http.StatusInternalServerError)
+		return
+	}
+
+	var buf bytes.Buffer
+	err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: q})
 	if err != nil {
 		http.Error(w, "failed to encode image", http.StatusInternalServerError)
 		return

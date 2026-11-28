@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"image"
 	"image/color"
 	"strings"
@@ -12,13 +13,16 @@ import (
 	"unicode/utf16"
 	"unsafe"
 
+	"github.com/kbinani/screenshot"
+	"github.com/lxn/win"
 	"golang.org/x/sys/windows"
 )
 
 const (
-	sbExecutable  = "SongBeamer.exe"
-	sbWindowClass = "TPresentationThumbNails"
-	imgMax        = 4096
+	sbExecutable   = "SongBeamer.exe"
+	sbWindowClass  = "TPresentationThumbNails"
+	sbPreviewClass = "TPresentationFormIE"
+	imgMax         = 4096
 
 	pointersize  = unsafe.Sizeof(uintptr(0))
 	bmBitsOffset = 4*4 + 2*2 + (pointersize-4)%pointersize
@@ -26,9 +30,10 @@ const (
 )
 
 type TProcess struct {
-	id   uint32
-	h    windows.Handle
-	hWnd windows.HWND
+	id    uint32
+	h     windows.Handle
+	hWnd  windows.HWND
+	hPrev windows.HWND
 
 	vmtSelfCheck   uintptr
 	vmtFieldTable  uintptr
@@ -151,6 +156,54 @@ func GetThumbnail(index int) (*image.RGBA, error) {
 	}
 
 	return img, nil
+}
+
+func GetPreview() (*image.RGBA, error) {
+	processMu.Lock()
+	defer processMu.Unlock()
+
+	var err error
+	if process == nil || !process.IsAlive() {
+		if process != nil {
+			process.Close()
+		}
+		process, err = GetProcess()
+		if err != nil {
+			return nil, err
+		}
+	}
+	p := process
+
+	if p.hPrev == 0 {
+		p.hPrev, err = p.GetWindowHandle(sbPreviewClass)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	const dpiAwarenessContextPerMonitorAwareV2 = ^uintptr(3) // (DPI_AWARENESS_CONTEXT)-4
+	SetProcessDpiAwarenessContext(dpiAwarenessContextPerMonitorAwareV2)
+
+	hWnd := win.HWND(p.hPrev)
+
+	// GetClientRect returns client coordinates (Left/Top are always 0),
+	// so translate the origin into virtual-screen coordinates, which is
+	// what screenshot.Capture expects (spans all monitors, may be negative).
+	rect := win.RECT{}
+	if !win.GetClientRect(hWnd, &rect) {
+		return nil, errors.New("GetClientRect failed")
+	}
+	origin := win.POINT{X: rect.Left, Y: rect.Top}
+	if !win.ClientToScreen(hWnd, &origin) {
+		return nil, errors.New("ClientToScreen failed")
+	}
+
+	width, height := int(rect.Right-rect.Left), int(rect.Bottom-rect.Top)
+	if width <= 0 || height <= 0 {
+		return nil, ErrImgInvalid
+	}
+
+	return screenshot.Capture(int(origin.X), int(origin.Y), width, height)
 }
 
 func GetProcess() (*TProcess, error) {
@@ -504,10 +557,11 @@ func utf16PtrToString(p uintptr, max int) string {
 // ******************************** //
 
 var (
-	user32            = syscall.NewLazyDLL("user32.dll")
-	pEnumWindows      = user32.NewProc("EnumWindows")
-	pEnumChildWindows = user32.NewProc("EnumChildWindows")
-	pEnumPropsExW     = user32.NewProc("EnumPropsExW")
+	user32                         = syscall.NewLazyDLL("user32.dll")
+	pEnumWindows                   = user32.NewProc("EnumWindows")
+	pEnumChildWindows              = user32.NewProc("EnumChildWindows")
+	pEnumPropsExW                  = user32.NewProc("EnumPropsExW")
+	pSetProcessDpiAwarenessContext = user32.NewProc("SetProcessDpiAwarenessContext")
 
 	pEnumWindowsProc = syscall.NewCallback(func(hWnd uintptr, lParam uintptr) uintptr {
 		return boolToPtr(lookupCallback[func(hWnd windows.HWND) bool](lParam)(windows.HWND(hWnd)))
@@ -533,6 +587,10 @@ func EnumPropsExW(hWnd windows.HWND, cb func(p1, p2, p3 uintptr) bool) {
 	cbId := enqueueCallback(cb)
 	defer unqueueCallback(cbId)
 	pEnumPropsExW.Call(uintptr(hWnd), pPropEnumProcEx, cbId)
+}
+
+func SetProcessDpiAwarenessContext(ctx uintptr) {
+	pSetProcessDpiAwarenessContext.Call(ctx)
 }
 
 var (
