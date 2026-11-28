@@ -1,15 +1,39 @@
 <script lang="ts" setup>
-import { computed } from 'vue';
-import { useSongbeamerStore, type PageItem } from '../stores/songbeamer';
-import PageContent from '../components/PageContent.vue';
+import { ref, watch } from 'vue';
+import { useSongbeamerStore } from '../stores/songbeamer';
+import { useInterval, useTimeout } from '../utils/composables';
+import { useConfigStore } from '../stores/config';
 
 const sb = useSongbeamerStore();
+const cfg = useConfigStore();
 
-const page = computed(() => sb.presentation.pages[sb.presentation.page] as PageItem | undefined);
+const imgSrc = ref("")
+const updateImgSrc = () => {
+    imgSrc.value = `/sbfiles/preview?cacheBuster=${Date.now()}&q=${cfg.presentation.previewQuality}`
+}
+useInterval(updateImgSrc, 5000, true)
+
+let queued = 0;
+watch(() => ([
+    sb.presentation.page,
+    sb.presentation.languages,
+    sb.presentation.state,
+    sb.playlist.itemindex,
+    sb.playlist.changed,
+]), () => {
+    queued++;
+    useTimeout(() => {
+        updateImgSrc()
+        queued--;
+    }, queued * 500 + 1);
+})
+
+
 </script>
 
 <template>
-    <div class="h-full w-full">
-        <PageContent :page="page" aspect-ratio="auto" :no-header="true" class="h-full w-full" />
+    <div class="h-full w-full relative">
+        <img :src="imgSrc" class="w-full h-full object-contain" @click="updateImgSrc">
+        <div class="badge absolute bottom-2 right-2">Tap to update</div>
     </div>
 </template>

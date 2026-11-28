@@ -108,6 +108,14 @@ function ignoreVersion() {
 
             <label class="label"> Render SNG as text </label>
             <input type="checkbox" v-model="config.presentation.localSngRendering" class="toggle" />
+
+            <label class="label">Preview quality</label>
+            <div class="flex gap-2 items-center">
+                <input type="range" min="1" max="100" class="range range-xs"
+                    v-model="config.presentation.previewQuality" />
+                {{ config.presentation.previewQuality }}%
+
+            </div>
         </fieldset>
 
         <fieldset class="fieldset border-base-300 rounded-box fieldset-grid-cols grid gap-4 border p-4">

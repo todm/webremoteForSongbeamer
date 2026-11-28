@@ -1,13 +1,18 @@
 import { onMounted, onUnmounted, ref } from 'vue';
 
 export function useInterval(fn: () => void, ms: number, runImmediately?: boolean) {
-    let interval: ReturnType<typeof setInterval>;
-    onMounted(() => {
-        interval = setInterval(fn, ms);
-        if (runImmediately) fn();
-    });
+    let interval = setInterval(fn, ms);
+    if (runImmediately) fn();
     onUnmounted(() => clearInterval(interval));
     return () => clearInterval(interval);
+}
+
+export function useTimeout(fn: () => void, ms: number) {
+    let timeout = setTimeout(fn, ms);
+    onUnmounted(() => {
+        clearTimeout(timeout);
+    });
+    return () => clearTimeout(timeout);
 }
 
 export function useEventListener(el: EventTarget, event: string, fn: (e: Event) => void) {

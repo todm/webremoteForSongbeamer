@@ -11,7 +11,8 @@ import {
     SettingsIcon,
     MenuIcon,
     GalleryThumbnailsIcon,
-    GamepadDirectionalIcon
+    GamepadDirectionalIcon,
+    EyeIcon
 } from '@lucide/vue';
 import { useConfigStore } from '../stores/config';
 import { useSongbeamerStore, PresentationState } from '../stores/songbeamer';
@@ -51,14 +52,14 @@ function changeLang(e: Event, lang: string) {
             <li class="">
                 <RouterLink to="/" exact-active-class="bg-base-300"><LayoutGridIcon class="h-4 w-4" />GridView</RouterLink>
             </li>
-            <!-- <li>
-                <RouterLink to="/preview" exact-active-class="bg-base-300"><IconEye class="h-4 w-4" />Preview</RouterLink>
-            </li> -->
             <li>
                 <RouterLink to="/presenter" exact-active-class="bg-base-300"><GalleryThumbnailsIcon class="h-4 w-4" />Presenter</RouterLink>
             </li>
             <li>
                 <RouterLink to="/remote" exact-active-class="bg-base-300"><GamepadDirectionalIcon class="h-4 w-4" />Remote</RouterLink>
+            </li>
+            <li>
+                <RouterLink to="/preview" exact-active-class="bg-base-300"><EyeIcon class="h-4 w-4" />Preview</RouterLink>
             </li>
             <li>
                 <RouterLink to="/settings" exact-active-class="bg-base-300"><SettingsIcon class="h-4 w-4" />Settings</RouterLink>
